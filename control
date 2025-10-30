@@ -1,0 +1,9 @@
+Package: com.tweak.wechatkeyboardswipe
+Name: WeChat Keyboard Swipe
+Version: 1.0.0
+Architecture: iphoneos-arm64
+Description: 在微信键盘上通过上下滑动手势切换中英文输入法。向上滑动切换到英文，向下滑动切换到中文。
+Maintainer: Tweak Developer
+Author: Tweak Developer
+Section: Tweaks
+Depends: mobilesubstrate, firmware (>= 16.0)
