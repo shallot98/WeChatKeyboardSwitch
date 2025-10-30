@@ -1,5 +1,5 @@
 #import <UIKit/UIKit.h>
-#import <UIKit/UIKit.h>
+#import <UIKit/UIResponder.h>
 #import <UIKit/UITextInput.h>
 #import <objc/runtime.h>
 
@@ -87,7 +87,7 @@ static void switchInputLanguage() {
     UITextInputMode *currentMode = nil;
     
     if (firstResponder && [firstResponder respondsToSelector:@selector(textInputMode)]) {
-        currentMode = firstResponder.textInputMode;
+        currentMode = [(id)firstResponder textInputMode];
         NSString *primaryLang = currentMode.primaryLanguage;
         if (primaryLang != nil) {
             NSLog(@"[WeChatIMEGestureSwitch] Current input mode: %@", primaryLang);
