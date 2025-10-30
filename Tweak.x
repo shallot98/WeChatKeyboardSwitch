@@ -5,6 +5,27 @@
 #define kKeyboardPrefix @"Keyboard"
 #define kInputViewPrefix @"InputView"
 
+static __weak id wkFirstResponder;
+
+@interface UIResponder (WKFirstResponder)
++ (id)wk_currentFirstResponder;
+- (void)wk_findFirstResponder:(id)sender;
+@end
+
+@implementation UIResponder (WKFirstResponder)
+
++ (id)wk_currentFirstResponder {
+    wkFirstResponder = nil;
+    [[UIApplication sharedApplication] sendAction:@selector(wk_findFirstResponder:) to:nil from:nil forEvent:nil];
+    return wkFirstResponder;
+}
+
+- (void)wk_findFirstResponder:(id)sender {
+    wkFirstResponder = self;
+}
+
+@end
+
 static BOOL isIOS16OrLater() {
     NSOperatingSystemVersion version = [[NSProcessInfo processInfo] operatingSystemVersion];
     return version.majorVersion >= 16;
@@ -46,8 +67,20 @@ static void traverseWeChatKeyboardClasses() {
 static void switchInputLanguage() {
     NSLog(@"[WeChatIMEGestureSwitch] Attempting to switch input language...");
     
-    UITextInputMode *currentMode = [UITextInputMode currentInputMode];
-    NSLog(@"[WeChatIMEGestureSwitch] Current input mode: %@", currentMode.primaryLanguage);
+    id firstResponder = [UIResponder wk_currentFirstResponder];
+    UITextInputMode *currentMode = nil;
+    
+    if ([firstResponder conformsToProtocol:@protocol(UITextInput)] && [firstResponder respondsToSelector:@selector(textInputMode)]) {
+        currentMode = [(id<UITextInput>)firstResponder textInputMode];
+        NSString *primaryLang = currentMode.primaryLanguage;
+        if (primaryLang != nil) {
+            NSLog(@"[WeChatIMEGestureSwitch] Current input mode: %@", primaryLang);
+        } else {
+            NSLog(@"[WeChatIMEGestureSwitch] Current input mode has nil primaryLanguage (possibly third-party keyboard)");
+        }
+    } else {
+        NSLog(@"[WeChatIMEGestureSwitch] Warning: No active text input found.");
+    }
     
     NSArray *inputModes = [UITextInputMode activeInputModes];
     NSLog(@"[WeChatIMEGestureSwitch] Available input modes: %@", inputModes);
@@ -57,11 +90,26 @@ static void switchInputLanguage() {
         return;
     }
     
-    NSInteger currentIndex = [inputModes indexOfObject:currentMode];
-    NSInteger nextIndex = (currentIndex + 1) % inputModes.count;
+    NSInteger currentIndex = NSNotFound;
+    if (currentMode != nil) {
+        currentIndex = [inputModes indexOfObject:currentMode];
+    }
+    
+    NSInteger nextIndex;
+    if (currentIndex != NSNotFound) {
+        nextIndex = (currentIndex + 1) % inputModes.count;
+    } else {
+        nextIndex = 0;
+        NSLog(@"[WeChatIMEGestureSwitch] Current mode not found in available modes, defaulting to first mode.");
+    }
     
     UITextInputMode *nextMode = inputModes[nextIndex];
-    NSLog(@"[WeChatIMEGestureSwitch] Switching to: %@", nextMode.primaryLanguage);
+    NSString *nextPrimaryLang = nextMode.primaryLanguage;
+    if (nextPrimaryLang != nil) {
+        NSLog(@"[WeChatIMEGestureSwitch] Switching to: %@", nextPrimaryLang);
+    } else {
+        NSLog(@"[WeChatIMEGestureSwitch] Switching to mode with nil primaryLanguage");
+    }
     
     [[UIApplication sharedApplication] sendAction:@selector(handleKeyUIEvent:) to:nil from:nil forEvent:nil];
 }
