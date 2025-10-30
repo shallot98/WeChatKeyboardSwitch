@@ -1,0 +1,24 @@
+# Theos build files
+.theos/
+obj/
+*.deb
+packages/
+.debmake/
+
+# macOS
+.DS_Store
+._*
+
+# Editors
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Compiled files
+*.o
+*.dylib
+
+# Logs
+*.log

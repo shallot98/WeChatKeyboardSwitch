@@ -1,0 +1,10 @@
+Package: com.yourcompany.wechatimegestureswitch
+Name: WeChat IME Gesture Switch
+Version: 1.0.0
+Architecture: iphoneos-arm64
+Description: 微信输入法手势切换插件 - 支持上下滑动切换中英文输入。在微信输入法中上划/下划即可快速切换输入语言。
+ WeChat input method gesture switch - Swipe up/down to switch between Chinese and English input.
+Maintainer: Your Name
+Author: Your Name
+Section: Tweaks
+Depends: mobilesubstrate, firmware (>= 16.0)
