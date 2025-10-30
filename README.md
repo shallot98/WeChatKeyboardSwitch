@@ -52,6 +52,10 @@ killall -9 WeChat
 
 ## 编译说明
 
+> **💡 Linux用户？** 查看详细的Linux编译指南：
+> - [LINUX_BUILD_GUIDE.md](LINUX_BUILD_GUIDE.md) - 完整Linux编译指南
+> - [LINUX_QUICK_REF.md](LINUX_QUICK_REF.md) - Linux快速参考
+
 ### 环境准备
 
 1. 安装Theos开发环境：

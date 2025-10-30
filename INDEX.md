@@ -35,6 +35,15 @@ Welcome to the WeChat Keyboard Swipe project! This index will help you navigate 
 | [PROJECT_SUMMARY.md](PROJECT_SUMMARY.md) | Project overview | 项目总结 |
 | [.github-description.md](.github-description.md) | GitHub description | GitHub描述 |
 
+### For Linux Developers | Linux开发者
+| File | Description | 描述 |
+|------|-------------|------|
+| [LINUX_README.md](LINUX_README.md) | Linux user guide | Linux用户指南 |
+| [LINUX_BUILD_GUIDE.md](LINUX_BUILD_GUIDE.md) | Complete Linux build guide | 完整Linux编译指南 |
+| [LINUX_QUICK_REF.md](LINUX_QUICK_REF.md) | Quick command reference | 快速命令参考 |
+| [CHINA_MIRROR_GUIDE.md](CHINA_MIRROR_GUIDE.md) | China mirror acceleration | 中国镜像加速 |
+| check-env.sh | Environment check script | 环境检查脚本 |
+
 ---
 
 ## 💻 Source Code | 源代码
