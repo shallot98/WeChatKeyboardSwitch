@@ -1,11 +1,26 @@
 #import <UIKit/UIKit.h>
+#import <UIKit/UIKit.h>
+#import <UIKit/UITextInput.h>
 #import <objc/runtime.h>
+
+@class UITextInputMode;
+@interface UIResponder (TextInputModeCompat)
+@property (nonatomic, readonly, strong) UITextInputMode *textInputMode;
+@end
+
+#ifndef __has_feature
+#define __has_feature(x) 0
+#endif
 
 #define kWeChatInputMethodPrefix @"WeChat"
 #define kKeyboardPrefix @"Keyboard"
 #define kInputViewPrefix @"InputView"
 
+#if __has_feature(objc_arc)
 static __weak id wkFirstResponder;
+#else
+static __unsafe_unretained id wkFirstResponder;
+#endif
 
 @interface UIResponder (WKFirstResponder)
 + (id)wk_currentFirstResponder;
