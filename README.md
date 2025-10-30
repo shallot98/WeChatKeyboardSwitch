@@ -9,14 +9,15 @@ An iOS jailbreak tweak that adds gesture switching to WeChat input method, allow
 - ✅ **手势识别**: 在键盘上上划/下划切换输入语言
 - ✅ **全局生效**: 在任何应用的输入法中都可使用
 - ✅ **iOS 16 兼容**: 专门优化支持 iOS 16+ 系统
+- ✅ **无根越狱支持**: 完全兼容 rootless 越狱环境 (palera1n, Dopamine 等)
 - ✅ **调试日志**: 输出详细的类遍历和手势事件日志
 - ✅ **零配置**: 安装后自动生效，无需额外设置
 
 ## 系统要求 (Requirements)
 
 - iOS 16.0 或更高版本
-- 已越狱设备
-- 安装 Cydia Substrate / Substitute
+- 已越狱设备 (支持有根和无根越狱)
+- 安装 Cydia Substrate / Substitute (版本 2.0+)
 
 ## 安装方法 (Installation)
 
@@ -49,6 +50,22 @@ killall -9 SpringBoard
 2. 搜索 "WeChat IME Gesture Switch"
 3. 点击安装 (Install)
 4. 重启设备 (Respring)
+
+### 无根越狱说明 (Rootless Jailbreak Notes)
+
+本插件完全支持无根越狱环境！编译时 Theos 会自动处理文件路径：
+
+- **有根越狱**: 安装到 `/Library/MobileSubstrate/DynamicLibraries/`
+- **无根越狱**: 安装到 `/var/jb/Library/MobileSubstrate/DynamicLibraries/`
+
+无需任何额外配置，`THEOS_PACKAGE_SCHEME = rootless` 已在 Makefile 中启用。
+
+This tweak fully supports rootless jailbreak! Theos automatically handles file paths:
+
+- **Rooted**: Installs to `/Library/MobileSubstrate/DynamicLibraries/`
+- **Rootless**: Installs to `/var/jb/Library/MobileSubstrate/DynamicLibraries/`
+
+No additional configuration needed - `THEOS_PACKAGE_SCHEME = rootless` is enabled in the Makefile.
 
 ## 使用方法 (Usage)
 
@@ -162,6 +179,11 @@ export THEOS_DEVICE_PORT=22
 ### 已测试系统版本
 
 - iOS 16.0 - 16.5
+
+### 越狱环境
+
+- ✅ **有根越狱 (Rooted)**: checkra1n, unc0ver, Taurine 等
+- ✅ **无根越狱 (Rootless)**: palera1n (rootless), Dopamine, XinaA15 等
 
 ### 已测试设备
 
