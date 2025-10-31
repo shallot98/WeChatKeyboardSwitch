@@ -1,88 +1,105 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+All notable changes to WeChat Keyboard Switch will be documented in this file.
 
-## [1.0.0] - 2024-01-01
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [1.0.0] - 2024-10-31
 
 ### Added
-- 🎉 Initial release
-- ✨ Gesture recognition for keyboard input switching
-  - Swipe up/down on keyboard to switch input languages
-  - Uses `UISwipeGestureRecognizer` for gesture detection
-- ✨ iOS 16+ compatibility
-  - System version check with `isIOS16OrLater()`
-  - Optimized for iOS 16.0 - 16.5
-- ✨ Global keyboard injection
-  - Hooks `UIInputView` for universal keyboard support
-  - Works in all apps, not just WeChat
-  - Injected into SpringBoard for system-wide effect
-- ✨ WeChat keyboard class traversal
-  - Runtime API to enumerate keyboard-related classes
-  - Comprehensive logging for debugging
-  - Searches for WeChat, Keyboard, InputView, and related patterns
-- ✨ Rootless jailbreak support
-  - Full compatibility with rootless environments (palera1n, Dopamine, XinaA15)
-  - `THEOS_PACKAGE_SCHEME = rootless` enabled in Makefile
-  - Automatic path handling by Theos build system
-  - Flexible dependencies: mobilesubstrate OR substitute
-- 📝 Comprehensive documentation
-  - Detailed README in Chinese and English
-  - Installation instructions for both rooted and rootless jailbreaks
-  - Debugging guide with log monitoring commands
-  - Troubleshooting section
-- 🐛 Debug logging system
-  - Console output for all major events
-  - Tweak load confirmation
-  - iOS version detection
-  - Class traversal results
-  - Gesture events and input mode switching
+- Initial release of WeChat Keyboard Switch
+- Swipe gesture support for keyboard input method switching
+  - Swipe UP: Switch to English input mode
+  - Swipe DOWN: Switch to Chinese input mode
+- Settings bundle integration with iOS Settings app
+  - Enable/disable toggle switch
+  - Usage instructions in settings
+  - About information
+- Real-time preference updates via Darwin notifications
+- Global keyboard support across all apps
+- WeChat/Weixin keyboard detection
+- iOS 16+ support with modern APIs
+- Full rootless jailbreak compatibility
+  - Rootless file paths (`/var/jb`)
+  - Rootless package scheme in Makefile
+- Comprehensive error handling
+- UIKit keyboard framework hooks:
+  - UIKeyboardImpl
+  - UIKeyboardInputModeController
+  - UIKeyboardInputMode
+- PreferenceBundle with clean iOS-styled UI
+- Automatic gesture recognizer management
+- Smooth input mode switching logic
 
 ### Technical Details
-- Hooks `UIInputView` lifecycle method `didMoveToWindow`
-- Adds gesture recognizers dynamically to keyboard views
-- Uses Associated Objects to track gesture recognizer state
-- Prevents duplicate gesture recognizer additions
-- Cycles through available input modes using `UITextInputMode` API
-- Constructor logs initialization and system compatibility
+- Built with Theos framework
+- Written in Objective-C with Logos syntax
+- Hooks UIKit private keyboard APIs
+- Uses UISwipeGestureRecognizer for gesture detection
+- Preference storage in rootless-compatible location
+- Darwin notification system for settings synchronization
+- ARC (Automatic Reference Counting) enabled
+- Targets ARM64 architecture (iphoneos-arm64)
 
-### Supported Environments
-- **iOS Versions**: 16.0 - 16.5
-- **Architectures**: arm64, arm64e
-- **Jailbreaks**:
-  - ✅ Rooted: checkra1n, unc0ver, Taurine
-  - ✅ Rootless: palera1n (rootless), Dopamine, XinaA15
-- **Substrates**: Cydia Substrate 0.9.5000+, Substitute 2.0+
-
-### Known Issues
-- May not work with some third-party input methods
-- Rare conflicts with other keyboard tweaks possible
-- Requires at least 2 input languages enabled in system settings
+### Documentation
+- Comprehensive README with usage instructions
+- Detailed INSTALLATION guide
+- Troubleshooting section
+- Developer documentation
+- MIT License
 
 ### Dependencies
-- mobilesubstrate (>= 0.9.5000) | substitute (>= 2.0)
-- firmware (>= 16.0)
+- mobilesubstrate (Cydia Substrate)
+- preferenceloader
+- firmware >= 16.0
+
+### Compatibility
+- iOS 16.0 through iOS 17.x
+- Rootless jailbreaks (Dopamine, Palera1n, etc.)
+- iPhone and iPad devices
+
+## [Unreleased]
+
+### Planned Features
+- Customizable gesture directions
+- Support for additional keyboard vendors
+- Haptic feedback option
+- Sound feedback option
+- Keyboard shortcut customization
+- Multiple language cycling
+- Gesture sensitivity adjustment
+- Blacklist/whitelist for specific apps
+- Statistics tracking (switch count, usage patterns)
+
+### Under Consideration
+- Non-rootless jailbreak support (if requested)
+- iOS 15 backport compatibility
+- Landscape keyboard optimization
+- Third-party keyboard manager compatibility improvements
+- Custom input mode ordering
 
 ---
 
-## Release Notes
+## Version History
 
-This is the initial release of WeChat IME Gesture Switch, providing a convenient gesture-based input method switching experience for iOS 16+ devices. The tweak has been designed with both traditional rooted and modern rootless jailbreak environments in mind, ensuring maximum compatibility across different setups.
+- **1.0.0** (2024-10-31) - Initial Release
 
-### Highlights
+## Notes
 
-🚀 **Universal Compatibility**: Works on both rooted and rootless jailbreaks without requiring separate builds or configurations.
+### Versioning Scheme
 
-⚡ **Zero Configuration**: Installs and works immediately after respring - no settings to configure.
+- **Major version** (X.0.0): Breaking changes, major feature overhauls
+- **Minor version** (1.X.0): New features, significant improvements, non-breaking changes
+- **Patch version** (1.0.X): Bug fixes, minor improvements, documentation updates
 
-🔍 **Developer-Friendly**: Extensive logging makes it easy to debug and understand tweak behavior.
+### Reporting Issues
 
-🌐 **Global Effect**: Works system-wide in any app that uses the standard iOS keyboard.
+If you encounter bugs or have feature requests, please:
+1. Check existing issues on GitHub
+2. Create a new issue with detailed information
+3. Include iOS version, jailbreak type, and steps to reproduce
 
-### Future Plans
+### Contributing
 
-- Support for customizable gesture directions
-- Preference bundle for user configuration
-- Support for iOS 17+
-- More input method switching modes (e.g., cycle in reverse, specific language selection)
-- Performance optimizations
-- Additional gesture types (long press, multi-finger swipes)
+Contributions are welcome! Please refer to the main README for contribution guidelines.

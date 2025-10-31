@@ -1,10 +1,10 @@
-Package: com.yourcompany.wechatimegestureswitch
-Name: WeChat IME Gesture Switch
+Package: com.yourrepo.wechatkeyboardswitch
+Name: WeChat Keyboard Switch
 Version: 1.0.0
 Architecture: iphoneos-arm64
-Description: 微信输入法手势切换插件 - 支持上下滑动切换中英文输入。在微信输入法中上划/下划即可快速切换输入语言。支持有根和无根越狱环境。
- WeChat input method gesture switch - Swipe up/down to switch between Chinese and English input. Supports both rooted and rootless jailbreak.
+Description: Enable Chinese/English input method switching via keyboard swipe gestures for WeChat keyboard globally
 Maintainer: Your Name
 Author: Your Name
 Section: Tweaks
-Depends: mobilesubstrate (>= 0.9.5000) | substitute (>= 2.0), firmware (>= 16.0)
+Depends: mobilesubstrate, preferenceloader, firmware (>= 16.0)
+Icon: https://example.com/icon.png

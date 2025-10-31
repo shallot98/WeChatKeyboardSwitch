@@ -1,4 +1,4 @@
-name: Build Rootless iOS 16 Tweak
+name: Build WeChat Keyboard Switch
 
 on:
   push:
@@ -6,6 +6,7 @@ on:
       - main
       - master
       - develop
+      - feat-wechat-keyboard-swipe-switcher
     tags:
       - 'v*'
   pull_request:
@@ -115,7 +116,7 @@ jobs:
       - name: Upload DEB Package
         uses: actions/upload-artifact@v4
         with:
-          name: WeChatIMEGestureSwitch-rootless-${{ steps.package_info.outputs.version }}
+          name: WeChatKeyboardSwitch-rootless-${{ steps.package_info.outputs.version }}
           path: ${{ steps.package_info.outputs.package_name }}
           if-no-files-found: error
 
@@ -146,7 +147,7 @@ jobs:
           echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Package Information" >> $GITHUB_STEP_SUMMARY
-          echo "- **Name**: WeChat IME Gesture Switch" >> $GITHUB_STEP_SUMMARY
+          echo "- **Name**: WeChat Keyboard Switch" >> $GITHUB_STEP_SUMMARY
           echo "- **Version**: ${{ steps.package_info.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Architecture**: iphoneos-arm64" >> $GITHUB_STEP_SUMMARY
           echo "- **Target**: iOS 16.0+" >> $GITHUB_STEP_SUMMARY
@@ -155,7 +156,7 @@ jobs:
           echo "### Build Configuration" >> $GITHUB_STEP_SUMMARY
           echo "- **Theos Path**: $HOME/theos" >> $GITHUB_STEP_SUMMARY
           echo "- **SDK**: iOS 16+" >> $GITHUB_STEP_SUMMARY
-          echo "- **Architectures**: arm64, arm64e" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tweak**: Swipe gesture keyboard input switcher" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           if [ -f "${{ steps.package_info.outputs.package_name }}" ]; then
             echo "### ✅ Build Successful" >> $GITHUB_STEP_SUMMARY
