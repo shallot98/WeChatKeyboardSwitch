@@ -6,7 +6,7 @@ include $(THEOS)/makefiles/common.mk
 BUNDLE_NAME = WeChatKeyboardSwitchPrefs
 
 WeChatKeyboardSwitchPrefs_FILES = WeChatKeyboardSwitchPrefsRootListController.m
-WeChatKeyboardSwitchPrefs_FRAMEWORKS = UIKit
+WeChatKeyboardSwitchPrefs_FRAMEWORKS = UIKit Foundation
 WeChatKeyboardSwitchPrefs_PRIVATE_FRAMEWORKS = Preferences
 WeChatKeyboardSwitchPrefs_INSTALL_PATH = /Library/PreferenceBundles
 WeChatKeyboardSwitchPrefs_CFLAGS = -fobjc-arc
