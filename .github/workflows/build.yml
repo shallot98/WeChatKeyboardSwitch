@@ -38,6 +38,8 @@ jobs:
             perl \
             fakeroot \
             libarchive-tools \
+            unzip \
+            xz-utils \
             zstd
 
       - name: Setup Theos
@@ -49,29 +51,44 @@ jobs:
 
       - name: Install iOS Toolchain
         run: |
+          set -euo pipefail
           echo "Installing iOS toolchain..."
-          cd $HOME/theos
-          mkdir -p toolchain
-          
-          # Download and install the iOS toolchain for Linux
-          # Using Procursus toolchain which provides clang/clang++ for iOS cross-compilation
-          git clone --depth=1 https://github.com/kabiroberai/swift-toolchain-linux.git toolchain/swift
-          
-          # Create symlink for expected toolchain location
-          mkdir -p toolchain/linux
-          ln -s $HOME/theos/toolchain/swift toolchain/linux/iphone
-          
-          # Verify toolchain installation
-          echo "Toolchain installed at:"
-          ls -la $HOME/theos/toolchain/
-          echo "Checking for clang:"
-          if [ -f "$HOME/theos/toolchain/linux/iphone/bin/clang" ]; then
-            echo "✓ clang found"
-            $HOME/theos/toolchain/linux/iphone/bin/clang --version
-          else
-            echo "⚠ clang not found at expected location"
-            find $HOME/theos/toolchain -name clang -type f || echo "No clang found"
-          fi
+          : "${THEOS:?THEOS environment variable is not set}"
+          TOOLCHAIN_ROOT="$THEOS/toolchain"
+          mkdir -p "$TOOLCHAIN_ROOT"
+          ARCH="$(uname -m)"
+          case "$ARCH" in
+            x86_64|amd64)
+              TOOLCHAIN_ARCH="x86_64"
+              ;;
+            aarch64|arm64)
+              TOOLCHAIN_ARCH="aarch64"
+              ;;
+            *)
+              echo "::error::Unsupported architecture: $ARCH"
+              exit 1
+              ;;
+          esac
+          TOOLCHAIN_URL="https://github.com/L1ghtmann/llvm-project/releases/latest/download/iOSToolchain-${TOOLCHAIN_ARCH}.tar.xz"
+          echo "Downloading toolchain from $TOOLCHAIN_URL"
+          rm -rf "$TOOLCHAIN_ROOT/linux/iphone"
+          TOOLCHAIN_ARCHIVE="$(mktemp)"
+          curl -L "$TOOLCHAIN_URL" -o "$TOOLCHAIN_ARCHIVE"
+          tar -xJf "$TOOLCHAIN_ARCHIVE" -C "$TOOLCHAIN_ROOT"
+          rm -f "$TOOLCHAIN_ARCHIVE"
+          TOOLCHAIN_BIN="$TOOLCHAIN_ROOT/linux/iphone/bin"
+          for binary in clang clang++ ld ar ranlib ldid; do
+            if [[ ! -x "$TOOLCHAIN_BIN/$binary" ]]; then
+              echo "::error::Missing required toolchain binary: $binary"
+              ls -R "$TOOLCHAIN_ROOT"
+              exit 1
+            fi
+          done
+          [[ -e "$TOOLCHAIN_BIN/arm-apple-darwin11-clang" ]] || ln -s clang "$TOOLCHAIN_BIN/arm-apple-darwin11-clang"
+          [[ -e "$TOOLCHAIN_BIN/arm-apple-darwin11-clang++" ]] || ln -s clang++ "$TOOLCHAIN_BIN/arm-apple-darwin11-clang++"
+          echo "Toolchain installed at: $TOOLCHAIN_BIN"
+          ls -la "$TOOLCHAIN_BIN"
+          "$TOOLCHAIN_BIN/clang" --version
 
       - name: Download iOS SDK
         run: |
