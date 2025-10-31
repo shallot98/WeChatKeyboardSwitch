@@ -1,0 +1,168 @@
+name: Build Rootless iOS 16 Tweak
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - develop
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+      - master
+      - develop
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Rootless Package
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            git \
+            curl \
+            wget \
+            perl \
+            fakeroot \
+            libarchive-tools \
+            zstd
+
+      - name: Setup Theos
+        run: |
+          echo "Setting up Theos..."
+          git clone --recursive https://github.com/theos/theos.git $HOME/theos
+          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
+          echo "PATH=$HOME/theos/bin:$PATH" >> $GITHUB_ENV
+
+      - name: Download iOS SDK
+        run: |
+          echo "Downloading iOS 16 SDK..."
+          cd $HOME/theos
+          mkdir -p sdks
+          cd sdks
+          
+          # Download iOS 16.5 SDK
+          wget -q https://github.com/theos/sdks/archive/refs/heads/master.zip -O sdks.zip
+          unzip -q sdks.zip
+          mv sdks-master/* .
+          rm -rf sdks-master sdks.zip
+          
+          # Verify SDK exists
+          if [ -d "iPhoneOS16.5.sdk" ]; then
+            echo "iOS 16.5 SDK installed successfully"
+            ls -la
+          else
+            echo "Checking for available SDKs..."
+            ls -la
+          fi
+
+      - name: Configure Theos
+        run: |
+          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
+          echo "$HOME/theos/bin" >> $GITHUB_PATH
+          
+          # Verify configuration
+          echo "Theos path: $HOME/theos"
+          ls -la $HOME/theos/
+          echo "SDKs available:"
+          ls -la $HOME/theos/sdks/ || echo "SDKs directory not found"
+
+      - name: Build Rootless Package
+        run: |
+          echo "Building rootless package..."
+          export THEOS=$HOME/theos
+          export PATH=$HOME/theos/bin:$PATH
+          
+          # Verify Makefile settings
+          echo "=== Makefile Configuration ==="
+          cat Makefile
+          
+          # Build the package
+          make clean || true
+          make package FINALPACKAGE=1
+          
+          # List generated packages
+          echo "=== Generated Packages ==="
+          ls -lah packages/
+
+      - name: Get Package Info
+        id: package_info
+        run: |
+          # Get the package name
+          PACKAGE_NAME=$(ls -t packages/*.deb | head -n1)
+          echo "package_name=${PACKAGE_NAME}" >> $GITHUB_OUTPUT
+          echo "package_basename=$(basename ${PACKAGE_NAME})" >> $GITHUB_OUTPUT
+          
+          # Get version from control file
+          VERSION=$(grep "^Version:" control | cut -d' ' -f2)
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          
+          echo "Package: ${PACKAGE_NAME}"
+          echo "Version: ${VERSION}"
+
+      - name: Upload DEB Package
+        uses: actions/upload-artifact@v4
+        with:
+          name: WeChatIMEGestureSwitch-rootless-${{ steps.package_info.outputs.version }}
+          path: ${{ steps.package_info.outputs.package_name }}
+          if-no-files-found: error
+
+      - name: Upload Build Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            .theos/_/DEBIAN/
+            *.log
+          if-no-files-found: ignore
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ${{ steps.package_info.outputs.package_name }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Summary
+        if: always()
+        run: |
+          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Package Information" >> $GITHUB_STEP_SUMMARY
+          echo "- **Name**: WeChat IME Gesture Switch" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: ${{ steps.package_info.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Architecture**: iphoneos-arm64" >> $GITHUB_STEP_SUMMARY
+          echo "- **Target**: iOS 16.0+" >> $GITHUB_STEP_SUMMARY
+          echo "- **Package Scheme**: Rootless" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Build Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "- **Theos Path**: $HOME/theos" >> $GITHUB_STEP_SUMMARY
+          echo "- **SDK**: iOS 16+" >> $GITHUB_STEP_SUMMARY
+          echo "- **Architectures**: arm64, arm64e" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f "${{ steps.package_info.outputs.package_name }}" ]; then
+            echo "### ✅ Build Successful" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Package file: \`${{ steps.package_info.outputs.package_basename }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Size: $(du -h ${{ steps.package_info.outputs.package_name }} | cut -f1)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### ❌ Build Failed" >> $GITHUB_STEP_SUMMARY
+          fi
