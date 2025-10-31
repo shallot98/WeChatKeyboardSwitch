@@ -1,5 +1,9 @@
 # WeChat Keyboard Switch
 
+[![Build Status](https://github.com/yourusername/WeChatKeyboardSwitch/workflows/Build%20WeChat%20Keyboard%20Switch/badge.svg)](https://github.com/yourusername/WeChatKeyboardSwitch/actions)
+[![iOS](https://img.shields.io/badge/iOS-16.0%2B-blue.svg)](https://www.apple.com/ios/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 A jailbreak tweak that enables Chinese/English input method switching via keyboard swipe gestures when using WeChat keyboard globally across all apps.
 
 ## Features
@@ -55,6 +59,18 @@ make install
 2. Search for "WeChat Keyboard Switch"
 3. Install the package
 4. Respring your device
+
+### From GitHub Actions (Recommended)
+
+No local Theos installation required! Get pre-built packages:
+
+1. Go to the repository's [Actions tab](../../actions)
+2. Click on the latest successful workflow run
+3. Download the artifact `WeChatKeyboardSwitch-rootless-{version}`
+4. Extract the `.deb` file
+5. Install on your device using SSH, Filza, or package manager
+
+For automatic builds on every commit and tagged releases, see [CI/CD Setup Guide](.github/CI_SETUP.md).
 
 ## Usage
 
