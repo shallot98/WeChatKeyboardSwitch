@@ -1,4 +1,4 @@
-TARGET := iphone:clang:16.5:16.0
+TARGET := iphone:clang:latest:16.5
 ARCHS = arm64 arm64e
 INSTALL_TARGET_PROCESSES = SpringBoard
 THEOS_PACKAGE_SCHEME = rootless
@@ -10,7 +10,6 @@ TWEAK_NAME = WeChatKeyboardSwitch
 WeChatKeyboardSwitch_FILES = Tweak.xm
 WeChatKeyboardSwitch_CFLAGS = -fobjc-arc
 WeChatKeyboardSwitch_FRAMEWORKS = UIKit Foundation
-WeChatKeyboardSwitch_PRIVATE_FRAMEWORKS = Preferences
 
 include $(THEOS_MAKE_PATH)/tweak.mk
 
