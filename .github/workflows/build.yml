@@ -1,241 +1,100 @@
-name: Build WeChat Keyboard Switch
-
+name: Build WeChatKeyboardSwitch
 on:
-  push:
-    branches:
-      - main
-      - master
-      - develop
-      - feat-wechat-keyboard-swipe-switcher
-    tags:
-      - 'v*'
-  pull_request:
-    branches:
-      - main
-      - master
-      - develop
   workflow_dispatch:
+    inputs:
+      package_scheme:
+        description: "Package scheme"
+        default: "rootless"
+        required: false
+        type: choice
+        options:
+          - rootless
+          - rootful
+      theos_target:
+        description: "Theos TARGET (e.g., iphone:clang:latest:16.0)"
+        required: false
+      make_target:
+        description: "make target to run"
+        default: "package"
+        required: false
+        type: choice
+        options:
+          - package
+          - all
+          - debug
+  push:
+    tags:
+      - "v*"
 
 jobs:
   build:
-    name: Build Rootless Package
-    runs-on: ubuntu-latest
-    
+    runs-on: macos-13
     steps:
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Install Dependencies
+      - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            git \
-            curl \
-            wget \
-            perl \
-            fakeroot \
-            libarchive-tools \
-            unzip \
-            xz-utils \
-            zstd
+          brew update
+          brew install ldid make dpkg gnu-sed
 
-      - name: Setup Theos
+      - name: Install Theos
         run: |
-          echo "Setting up Theos..."
-          git clone --recursive https://github.com/theos/theos.git $HOME/theos
-          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
-          echo "PATH=$HOME/theos/bin:$PATH" >> $GITHUB_ENV
+          git clone --recursive https://github.com/theos/theos "$HOME/theos"
+          echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
+          echo "THEOS_PLATFORM_SDK_ROOT=$(xcode-select -p)" >> "$GITHUB_ENV"
+          echo "DEVELOPER_DIR=$(xcode-select -p)" >> "$GITHUB_ENV"
 
-      - name: Install iOS Toolchain
+      - name: Ensure SDK availability (use Xcode SDKs or fallback to theos/sdks)
+        run: |
+          SDK_DIR="$(xcode-select -p)/Platforms/iPhoneOS.platform/Developer/SDKs"
+          if [ ! -d "$SDK_DIR" ] && [ ! -d "$HOME/theos/sdks" ]; then
+            echo "Xcode iPhoneOS SDKs not found; cloning theos/sdks as fallback"
+            git clone https://github.com/theos/sdks.git "$HOME/theos/sdks"
+          fi
+
+      - name: Build tweak (iOS16 + rootless-ready)
+        env:
+          THEOS: ${{ env.THEOS }}
+          THEOS_PLATFORM_SDK_ROOT: ${{ env.THEOS_PLATFORM_SDK_ROOT }}
         run: |
           set -euo pipefail
-          echo "Installing iOS toolchain..."
-          : "${THEOS:?THEOS environment variable is not set}"
-          TOOLCHAIN_ROOT="$THEOS/toolchain"
-          mkdir -p "$TOOLCHAIN_ROOT"
-          ARCH="$(uname -m)"
-          case "$ARCH" in
-            x86_64|amd64)
-              TOOLCHAIN_ARCH="x86_64"
-              ;;
-            aarch64|arm64)
-              TOOLCHAIN_ARCH="aarch64"
-              ;;
-            *)
-              echo "::error::Unsupported architecture: $ARCH"
-              exit 1
-              ;;
-          esac
-          TOOLCHAIN_URL="https://github.com/L1ghtmann/llvm-project/releases/latest/download/iOSToolchain-${TOOLCHAIN_ARCH}.tar.xz"
-          echo "Downloading toolchain from $TOOLCHAIN_URL"
-          rm -rf "$TOOLCHAIN_ROOT/linux/iphone"
-          TOOLCHAIN_ARCHIVE="$(mktemp)"
-          curl -L "$TOOLCHAIN_URL" -o "$TOOLCHAIN_ARCHIVE"
-          tar -xJf "$TOOLCHAIN_ARCHIVE" -C "$TOOLCHAIN_ROOT"
-          rm -f "$TOOLCHAIN_ARCHIVE"
-          TOOLCHAIN_BIN="$TOOLCHAIN_ROOT/linux/iphone/bin"
-          for binary in clang clang++ ld ar ranlib ldid; do
-            if [[ ! -x "$TOOLCHAIN_BIN/$binary" ]]; then
-              echo "::error::Missing required toolchain binary: $binary"
-              ls -R "$TOOLCHAIN_ROOT"
-              exit 1
-            fi
-          done
-          [[ -e "$TOOLCHAIN_BIN/arm-apple-darwin11-clang" ]] || ln -s clang "$TOOLCHAIN_BIN/arm-apple-darwin11-clang"
-          [[ -e "$TOOLCHAIN_BIN/arm-apple-darwin11-clang++" ]] || ln -s clang++ "$TOOLCHAIN_BIN/arm-apple-darwin11-clang++"
-          echo "Toolchain installed at: $TOOLCHAIN_BIN"
-          ls -la "$TOOLCHAIN_BIN"
-          "$TOOLCHAIN_BIN/clang" --version
-
-      - name: Download iOS SDK
-        run: |
-          echo "Downloading iOS 16.5 SDK..."
-          cd $HOME/theos
-          mkdir -p sdks
-          cd sdks
-          
-          # Download iOS 16.5 SDK from theos/sdks repository
-          wget -q https://github.com/theos/sdks/archive/refs/heads/master.zip -O sdks.zip
-          unzip -q sdks.zip
-          mv sdks-master/* .
-          rm -rf sdks-master sdks.zip
-          
-          # Verify SDK exists
-          echo "Checking for available SDKs..."
-          ls -la
-          
-          if [ -d "iPhoneOS16.5.sdk" ]; then
-            echo "✓ iOS 16.5 SDK installed successfully"
-            echo "SDK structure:"
-            ls -la iPhoneOS16.5.sdk/
+          make clean
+          SCHEME=${{ github.event.inputs.package_scheme }}
+          [ -z "$SCHEME" ] && SCHEME=rootless
+          if [ -n "${{ github.event.inputs.theos_target }}" ]; then
+            TARGET_ARG="TARGET=${{ github.event.inputs.theos_target }}"
           else
-            echo "⚠ iOS 16.5 SDK not found, using latest available SDK"
-            # List available SDKs
-            ls -d iPhoneOS*.sdk 2>/dev/null || echo "No iOS SDKs found"
+            TARGET_ARG=""
           fi
+          if [ -n "${{ github.event.inputs.make_target }}" ]; then
+            MAKE_TGT=${{ github.event.inputs.make_target }}
+          else
+            MAKE_TGT=package
+          fi
+          make $MAKE_TGT THEOS_PACKAGE_SCHEME=$SCHEME $TARGET_ARG
 
-      - name: Configure Theos
-        run: |
-          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
-          echo "$HOME/theos/bin" >> $GITHUB_PATH
-          echo "$HOME/theos/toolchain/linux/iphone/bin" >> $GITHUB_PATH
-          
-          # Verify configuration
-          echo "=== Theos Configuration ==="
-          echo "Theos path: $HOME/theos"
-          echo ""
-          echo "Theos directory structure:"
-          ls -la $HOME/theos/
-          echo ""
-          echo "Toolchain directory:"
-          ls -la $HOME/theos/toolchain/ || echo "Toolchain directory not found"
-          echo ""
-          echo "SDKs available:"
-          ls -la $HOME/theos/sdks/ || echo "SDKs directory not found"
-          echo ""
-          echo "Toolchain binaries:"
-          ls -la $HOME/theos/toolchain/linux/iphone/bin/ 2>/dev/null || echo "Toolchain binaries not found"
-
-      - name: Build Rootless Package
-        run: |
-          echo "Building rootless package..."
-          export THEOS=$HOME/theos
-          export PATH=$HOME/theos/toolchain/linux/iphone/bin:$HOME/theos/bin:$PATH
-          
-          # Verify Makefile settings
-          echo "=== Makefile Configuration ==="
-          cat Makefile
-          echo ""
-          
-          # Verify toolchain is accessible
-          echo "=== Toolchain Verification ==="
-          echo "Checking clang:"
-          which clang || echo "clang not in PATH"
-          echo "Checking clang++:"
-          which clang++ || echo "clang++ not in PATH"
-          echo "Direct check:"
-          ls -la $THEOS/toolchain/linux/iphone/bin/clang* || echo "Toolchain binaries not found"
-          echo ""
-          
-          # Build the package
-          echo "=== Building Package ==="
-          make clean || true
-          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
-          
-          # List generated packages
-          echo ""
-          echo "=== Generated Packages ==="
-          ls -lah packages/
-
-      - name: Get Package Info
-        id: package_info
-        run: |
-          # Get the package name
-          PACKAGE_NAME=$(ls -t packages/*.deb | head -n1)
-          echo "package_name=${PACKAGE_NAME}" >> $GITHUB_OUTPUT
-          echo "package_basename=$(basename ${PACKAGE_NAME})" >> $GITHUB_OUTPUT
-          
-          # Get version from control file
-          VERSION=$(grep "^Version:" control | cut -d' ' -f2)
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          
-          echo "Package: ${PACKAGE_NAME}"
-          echo "Version: ${VERSION}"
-
-      - name: Upload DEB Package
+      - name: Upload .deb artifact
         uses: actions/upload-artifact@v4
         with:
-          name: WeChatKeyboardSwitch-rootless-${{ steps.package_info.outputs.version }}
-          path: ${{ steps.package_info.outputs.package_name }}
+          name: wechatkeyboardswitch-rootless-deb
+          path: packages/*.deb
           if-no-files-found: error
 
-      - name: Upload Build Logs
-        if: always()
-        uses: actions/upload-artifact@v4
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: macos-13
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
         with:
-          name: build-logs
-          path: |
-            .theos/_/DEBIAN/
-            *.log
-          if-no-files-found: ignore
+          name: wechatkeyboardswitch-rootless-deb
+          path: dist
 
-      - name: Create Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v1
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          files: ${{ steps.package_info.outputs.package_name }}
-          generate_release_notes: true
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build Summary
-        if: always()
-        run: |
-          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Package Information" >> $GITHUB_STEP_SUMMARY
-          echo "- **Name**: WeChat Keyboard Switch" >> $GITHUB_STEP_SUMMARY
-          echo "- **Version**: ${{ steps.package_info.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Architecture**: iphoneos-arm64" >> $GITHUB_STEP_SUMMARY
-          echo "- **Target**: iOS 16.0+" >> $GITHUB_STEP_SUMMARY
-          echo "- **Package Scheme**: Rootless" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Build Configuration" >> $GITHUB_STEP_SUMMARY
-          echo "- **Theos Path**: $HOME/theos" >> $GITHUB_STEP_SUMMARY
-          echo "- **SDK**: iOS 16+" >> $GITHUB_STEP_SUMMARY
-          echo "- **Tweak**: Swipe gesture keyboard input switcher" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          if [ -f "${{ steps.package_info.outputs.package_name }}" ]; then
-            echo "### ✅ Build Successful" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Package file: \`${{ steps.package_info.outputs.package_basename }}\`" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Size: $(du -h ${{ steps.package_info.outputs.package_name }} | cut -f1)" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "### ❌ Build Failed" >> $GITHUB_STEP_SUMMARY
-          fi
+          files: dist/*.deb
