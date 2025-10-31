@@ -1,24 +1,23 @@
-# Theos build files
+# Theos
 .theos/
 obj/
-*.deb
 packages/
-.debmake/
+
+# Build artifacts
+*.deb
+*.dylib
+*.o
 
 # macOS
 .DS_Store
-._*
 
-# Editors
+# Xcode
+*.xcodeproj
+*.xcworkspace
+
+# Editor
 *.swp
 *.swo
 *~
 .vscode/
 .idea/
-
-# Compiled files
-*.o
-*.dylib
-
-# Logs
-*.log
