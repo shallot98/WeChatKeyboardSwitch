@@ -12,6 +12,7 @@ An iOS jailbreak tweak that adds gesture switching to WeChat input method, allow
 - ✅ **无根越狱支持**: 完全兼容 rootless 越狱环境 (palera1n, Dopamine 等)
 - ✅ **调试日志**: 输出详细的类遍历和手势事件日志
 - ✅ **零配置**: 安装后自动生效，无需额外设置
+- ✅ **CI/CD 自动构建**: GitHub Actions 自动编译并发布 rootless 版本
 
 ## 系统要求 (Requirements)
 
@@ -20,6 +21,24 @@ An iOS jailbreak tweak that adds gesture switching to WeChat input method, allow
 - 安装 Cydia Substrate / Substitute (版本 2.0+)
 
 ## 安装方法 (Installation)
+
+### GitHub Actions 自动构建 (Automated Build via GitHub Actions)
+
+本项目支持通过 GitHub Actions 自动编译 rootless 版本！
+
+This project supports automated builds via GitHub Actions for rootless jailbreak!
+
+**下载预编译包 (Download Pre-built Package):**
+1. 访问 [Actions](../../actions) 页面
+2. 选择最新的成功构建
+3. 在 Artifacts 中下载 `.deb` 文件
+4. 传输到设备并安装
+
+**For tag releases:**
+1. 访问 [Releases](../../releases) 页面
+2. 下载最新版本的 `.deb` 文件
+
+详细文档: [CI/CD 工作流文档](.github/workflows/README.md)
 
 ### 从源码编译 (Build from Source)
 
