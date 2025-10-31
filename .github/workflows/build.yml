@@ -47,54 +47,109 @@ jobs:
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
           echo "PATH=$HOME/theos/bin:$PATH" >> $GITHUB_ENV
 
+      - name: Install iOS Toolchain
+        run: |
+          echo "Installing iOS toolchain..."
+          cd $HOME/theos
+          mkdir -p toolchain
+          
+          # Download and install the iOS toolchain for Linux
+          # Using Procursus toolchain which provides clang/clang++ for iOS cross-compilation
+          git clone --depth=1 https://github.com/kabiroberai/swift-toolchain-linux.git toolchain/swift
+          
+          # Create symlink for expected toolchain location
+          mkdir -p toolchain/linux
+          ln -s $HOME/theos/toolchain/swift toolchain/linux/iphone
+          
+          # Verify toolchain installation
+          echo "Toolchain installed at:"
+          ls -la $HOME/theos/toolchain/
+          echo "Checking for clang:"
+          if [ -f "$HOME/theos/toolchain/linux/iphone/bin/clang" ]; then
+            echo "✓ clang found"
+            $HOME/theos/toolchain/linux/iphone/bin/clang --version
+          else
+            echo "⚠ clang not found at expected location"
+            find $HOME/theos/toolchain -name clang -type f || echo "No clang found"
+          fi
+
       - name: Download iOS SDK
         run: |
-          echo "Downloading iOS 16 SDK..."
+          echo "Downloading iOS 16.5 SDK..."
           cd $HOME/theos
           mkdir -p sdks
           cd sdks
           
-          # Download iOS 16.5 SDK
+          # Download iOS 16.5 SDK from theos/sdks repository
           wget -q https://github.com/theos/sdks/archive/refs/heads/master.zip -O sdks.zip
           unzip -q sdks.zip
           mv sdks-master/* .
           rm -rf sdks-master sdks.zip
           
           # Verify SDK exists
+          echo "Checking for available SDKs..."
+          ls -la
+          
           if [ -d "iPhoneOS16.5.sdk" ]; then
-            echo "iOS 16.5 SDK installed successfully"
-            ls -la
+            echo "✓ iOS 16.5 SDK installed successfully"
+            echo "SDK structure:"
+            ls -la iPhoneOS16.5.sdk/
           else
-            echo "Checking for available SDKs..."
-            ls -la
+            echo "⚠ iOS 16.5 SDK not found, using latest available SDK"
+            # List available SDKs
+            ls -d iPhoneOS*.sdk 2>/dev/null || echo "No iOS SDKs found"
           fi
 
       - name: Configure Theos
         run: |
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
           echo "$HOME/theos/bin" >> $GITHUB_PATH
+          echo "$HOME/theos/toolchain/linux/iphone/bin" >> $GITHUB_PATH
           
           # Verify configuration
+          echo "=== Theos Configuration ==="
           echo "Theos path: $HOME/theos"
+          echo ""
+          echo "Theos directory structure:"
           ls -la $HOME/theos/
+          echo ""
+          echo "Toolchain directory:"
+          ls -la $HOME/theos/toolchain/ || echo "Toolchain directory not found"
+          echo ""
           echo "SDKs available:"
           ls -la $HOME/theos/sdks/ || echo "SDKs directory not found"
+          echo ""
+          echo "Toolchain binaries:"
+          ls -la $HOME/theos/toolchain/linux/iphone/bin/ 2>/dev/null || echo "Toolchain binaries not found"
 
       - name: Build Rootless Package
         run: |
           echo "Building rootless package..."
           export THEOS=$HOME/theos
-          export PATH=$HOME/theos/bin:$PATH
+          export PATH=$HOME/theos/toolchain/linux/iphone/bin:$HOME/theos/bin:$PATH
           
           # Verify Makefile settings
           echo "=== Makefile Configuration ==="
           cat Makefile
+          echo ""
+          
+          # Verify toolchain is accessible
+          echo "=== Toolchain Verification ==="
+          echo "Checking clang:"
+          which clang || echo "clang not in PATH"
+          echo "Checking clang++:"
+          which clang++ || echo "clang++ not in PATH"
+          echo "Direct check:"
+          ls -la $THEOS/toolchain/linux/iphone/bin/clang* || echo "Toolchain binaries not found"
+          echo ""
           
           # Build the package
+          echo "=== Building Package ==="
           make clean || true
-          make package FINALPACKAGE=1
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
           
           # List generated packages
+          echo ""
           echo "=== Generated Packages ==="
           ls -lah packages/
 
