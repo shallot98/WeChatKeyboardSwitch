@@ -1,5 +1,6 @@
 #import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
+#import <objc/runtime.h>
 
 #define PREF_PATH @"/var/jb/var/mobile/Library/Preferences/com.yourrepo.wechatkeyboardswitch.plist"
 #define NOTIFICATION_NAME "com.yourrepo.wechatkeyboardswitch/prefsChanged"

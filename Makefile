@@ -12,7 +12,6 @@ WeChatKeyboardSwitch_FRAMEWORKS = UIKit Foundation
 WeChatKeyboardSwitch_PRIVATE_FRAMEWORKS = Preferences
 
 include $(THEOS_MAKE_PATH)/tweak.mk
-include $(THEOS_MAKE_PATH)/aggregate.mk
 
 SUBPROJECTS += wechatkeyboardswitchprefs
 include $(THEOS_MAKE_PATH)/aggregate.mk
