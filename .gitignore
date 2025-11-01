@@ -1,0 +1,9 @@
+# Theos build artifacts
+.theos/
+obj/
+obj-*/
+packages/
+*.deb
+
+# macOS files
+.DS_Store
