@@ -1,8 +1,8 @@
 Package: com.yourrepo.wechatkeyboardswitch
 Name: WeChat Keyboard Switch
-Version: 1.0.0
+Version: 1.1.0
 Architecture: iphoneos-arm64
-Description: Enable Chinese/English input method switching via keyboard swipe gestures for WeChat keyboard globally
+Description: Reliable Chinese/English input method switching via keyboard swipe gestures for WeChat keyboard. Features robust gesture detection, debouncing, hardware keyboard detection, and deterministic mode switching for iOS 16+.
 Maintainer: Your Name
 Author: Your Name
 Section: Tweaks

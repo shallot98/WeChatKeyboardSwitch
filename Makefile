@@ -11,6 +11,10 @@ WeChatKeyboardSwitch_FILES = Tweak.xm
 WeChatKeyboardSwitch_CFLAGS = -fobjc-arc
 WeChatKeyboardSwitch_FRAMEWORKS = UIKit Foundation
 
+ifeq ($(DEBUG),1)
+WeChatKeyboardSwitch_CFLAGS += -DDEBUG=1
+endif
+
 include $(THEOS_MAKE_PATH)/tweak.mk
 
 SUBPROJECTS += wechatkeyboardswitchprefs
