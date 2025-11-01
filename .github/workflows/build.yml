@@ -47,34 +47,40 @@ jobs:
           echo "THEOS_PLATFORM_SDK_ROOT=$(xcode-select -p)" >> "$GITHUB_ENV"
           echo "DEVELOPER_DIR=$(xcode-select -p)" >> "$GITHUB_ENV"
 
-      - name: Clone theos SDKs
+      - name: Ensure theos sdks (force update or clone)
         run: |
-          git clone --depth=1 https://github.com/theos/sdks "$HOME/theos/sdks"
+          set -euo pipefail
+          if [ -d "$HOME/theos/sdks/.git" ]; then
+            git -C "$HOME/theos/sdks" fetch --depth=1 origin
+            git -C "$HOME/theos/sdks" reset --hard FETCH_HEAD
+          elif [ -d "$HOME/theos/sdks" ]; then
+            rm -rf "$HOME/theos/sdks"
+            git clone --depth=1 https://github.com/theos/sdks "$HOME/theos/sdks"
+          else
+            git clone --depth=1 https://github.com/theos/sdks "$HOME/theos/sdks"
+          fi
 
       - name: Build tweak (iOS16 + rootless-ready)
         env:
           THEOS: ${{ env.THEOS }}
         run: |
           set -euo pipefail
-          make clean
-          SCHEME=${{ github.event.inputs.package_scheme }}
-          [ -z "$SCHEME" ] && SCHEME=rootless
+          export SDKROOT="$HOME/theos/sdks/iPhoneOS16.5.sdk"
+          unset THEOS_PLATFORM_SDK_ROOT || true
+          SCHEME=${{ github.event.inputs.package_scheme }}; [ -z "$SCHEME" ] && SCHEME=rootless
           if [ -n "${{ github.event.inputs.theos_target }}" ]; then
             TARGET_ARG="TARGET=${{ github.event.inputs.theos_target }}"
           else
-            TARGET_ARG=""
+            TARGET_ARG="TARGET=iphone:clang:latest:16.5"
           fi
-          if [ -n "${{ github.event.inputs.make_target }}" ]]; then
-            MAKE_TGT=${{ github.event.inputs.make_target }}
-          else
-            MAKE_TGT=package
-          fi
-          make $MAKE_TGT THEOS_PACKAGE_SCHEME=$SCHEME SDKROOT=$HOME/theos/sdks/iPhoneOS16.5.sdk $TARGET_ARG
+          MAKE_TGT=${{ github.event.inputs.make_target || 'package' }}
+          make clean
+          make $MAKE_TGT THEOS_PACKAGE_SCHEME=$SCHEME $TARGET_ARG
 
       - name: Upload .deb artifact
         uses: actions/upload-artifact@v4
         with:
-          name: wechatkeyboardswitch-rootless-deb
+          name: wechatkeyboardswitch-${{ github.event.inputs.package_scheme || 'rootless' }}-deb
           path: packages/*.deb
           if-no-files-found: error
 
@@ -86,7 +92,7 @@ jobs:
       - name: Download artifact
         uses: actions/download-artifact@v4
         with:
-          name: wechatkeyboardswitch-rootless-deb
+          name: wechatkeyboardswitch-${{ github.event.inputs.package_scheme || 'rootless' }}-deb
           path: dist
 
       - name: Publish GitHub Release
