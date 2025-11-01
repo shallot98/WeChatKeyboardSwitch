@@ -1,0 +1,10 @@
+"MAIN_SETTINGS" = "General";
+"ENABLED_LABEL" = "Enable";
+"ONLY_WECHAT_LABEL" = "Only WeChat";
+"ONLY_WECHAT_SUBTITLE" = "Limit gestures to WeChat only.";
+"GESTURE_SETTINGS" = "Gestures";
+"INVERT_DIRECTION_LABEL" = "Invert Direction";
+"INVERT_DIRECTION_SUBTITLE" = "Swap the up and down gesture actions.";
+"HAPTIC_FEEDBACK_LABEL" = "Haptic Feedback";
+"HAPTIC_FEEDBACK_SUBTITLE" = "Provide haptic feedback when toggling.";
+"FOOTER_TEXT" = "Changes take effect immediately without a respring.";

@@ -6,4 +6,4 @@ Description: Keyboard switch enhancement for WeChat (iOS 13-16.5, rootless)
 Maintainer: WeChatKeyboardSwitch
 Author: WeChatKeyboardSwitch
 Section: Tweaks
-Depends: mobilesubstrate (>= 0.9.5000)
+Depends: mobilesubstrate (>= 0.9.5000), preferenceloader

@@ -1,0 +1,10 @@
+"MAIN_SETTINGS" = "通用";
+"ENABLED_LABEL" = "启用";
+"ONLY_WECHAT_LABEL" = "仅微信";
+"ONLY_WECHAT_SUBTITLE" = "仅在微信中启用手势功能。";
+"GESTURE_SETTINGS" = "手势";
+"INVERT_DIRECTION_LABEL" = "反转方向";
+"INVERT_DIRECTION_SUBTITLE" = "交换向上和向下手势的作用。";
+"HAPTIC_FEEDBACK_LABEL" = "触感反馈";
+"HAPTIC_FEEDBACK_SUBTITLE" = "切换时提供触感反馈。";
+"FOOTER_TEXT" = "更改立即生效，无需重新注销。";

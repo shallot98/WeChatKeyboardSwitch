@@ -21,9 +21,15 @@
 #endif
 
 static NSString * const kWeChatBundleIdentifier = @"com.tencent.xin";
-static NSString * const kPreferencesDomain = @"com.wechat.keyboardswitch.prefs";
+static NSString * const kPreferencesDomain = @"com.wechat.keyboardswitch";
+static NSString * const kPrefsChangedNotification = @"com.wechat.keyboardswitch.prefschanged";
 static const CFTimeInterval kGestureDebounceInterval = 0.35;
 static const CGFloat kBottomExclusionHeight = 54.0;
+
+static BOOL kPrefEnabled = YES;
+static BOOL kPrefOnlyWeChat = YES;
+static BOOL kPrefInvertDirection = NO;
+static BOOL kPrefHapticFeedback = YES;
 
 @interface UIKeyboardLayout : UIView
 @end
@@ -160,33 +166,71 @@ static BOOL WKSIdentifierMatchesEnglish(NSString *identifier, NSString *primaryL
     return NO;
 }
 
-static BOOL WKSShouldActivate(void) {
-    static dispatch_once_t onceToken;
-    static BOOL shouldActivate = NO;
-    dispatch_once(&onceToken, ^{
-        NSString *bundleIdentifier = [[NSBundle mainBundle] bundleIdentifier];
-        shouldActivate = [bundleIdentifier isEqualToString:kWeChatBundleIdentifier];
-        if (!shouldActivate) {
-            WKSLog(@"Skipping activation for bundle: %@", bundleIdentifier);
-        }
-    });
-    return shouldActivate;
-}
-
-static BOOL WKSShouldProvideHapticFeedback(void) {
-    CFPropertyListRef value = CFPreferencesCopyAppValue(CFSTR("hapticsEnabled"), (__bridge CFStringRef)kPreferencesDomain);
-    BOOL enabled = NO;
+static BOOL WKSGetBoolPreference(CFStringRef key, BOOL defaultValue) {
+    CFPropertyListRef value = CFPreferencesCopyAppValue(key, (__bridge CFStringRef)kPreferencesDomain);
+    BOOL result = defaultValue;
     if (value) {
         if (CFGetTypeID(value) == CFBooleanGetTypeID()) {
-            enabled = CFBooleanGetValue((CFBooleanRef)value);
+            result = CFBooleanGetValue((CFBooleanRef)value);
         } else if (CFGetTypeID(value) == CFNumberGetTypeID()) {
             int number = 0;
             CFNumberGetValue((CFNumberRef)value, kCFNumberIntType, &number);
-            enabled = (number != 0);
+            result = (number != 0);
         }
         CFRelease(value);
     }
-    return enabled;
+    return result;
+}
+
+static void WKSLoadPreferences(void) {
+    CFPreferencesAppSynchronize((__bridge CFStringRef)kPreferencesDomain);
+    kPrefEnabled = WKSGetBoolPreference(CFSTR("Enabled"), YES);
+    kPrefOnlyWeChat = WKSGetBoolPreference(CFSTR("OnlyWeChat"), YES);
+    kPrefInvertDirection = WKSGetBoolPreference(CFSTR("InvertDirection"), NO);
+    kPrefHapticFeedback = WKSGetBoolPreference(CFSTR("HapticFeedback"), YES);
+    WKSLog(@"Preferences loaded - Enabled: %d, OnlyWeChat: %d, InvertDirection: %d, HapticFeedback: %d",
+           kPrefEnabled, kPrefOnlyWeChat, kPrefInvertDirection, kPrefHapticFeedback);
+}
+
+static void WKSPreferencesChanged(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo) {
+    WKSLog(@"Received preferences change notification");
+    WKSLoadPreferences();
+}
+
+static void WKSRegisterForPreferenceChanges(void) {
+    CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(),
+                                    NULL,
+                                    WKSPreferencesChanged,
+                                    (__bridge CFStringRef)kPrefsChangedNotification,
+                                    NULL,
+                                    CFNotificationSuspensionBehaviorDeliverImmediately);
+}
+
+static BOOL WKSIsWeChatProcess(void) {
+    static dispatch_once_t onceToken;
+    static BOOL isWeChat = NO;
+    dispatch_once(&onceToken, ^{
+        NSString *bundleIdentifier = [[NSBundle mainBundle] bundleIdentifier];
+        isWeChat = [bundleIdentifier isEqualToString:kWeChatBundleIdentifier];
+        if (!isWeChat) {
+            WKSLog(@"Running in bundle: %@", bundleIdentifier);
+        }
+    });
+    return isWeChat;
+}
+
+static BOOL WKSShouldActivate(void) {
+    if (!kPrefEnabled) {
+        return NO;
+    }
+    if (kPrefOnlyWeChat) {
+        return WKSIsWeChatProcess();
+    }
+    return YES;
+}
+
+static BOOL WKSShouldProvideHapticFeedback(void) {
+    return kPrefHapticFeedback;
 }
 
 static void WKSTriggerHapticFeedback(void) {
@@ -213,6 +257,8 @@ static void WKSTriggerHapticFeedback(void) {
 @interface WKSKeyboardInputHelper : NSObject
 + (instancetype)sharedHelper;
 - (BOOL)toggleBetweenChineseAndEnglish;
+- (BOOL)switchToChineseInputMode;
+- (BOOL)switchToEnglishInputMode;
 @end
 
 @implementation WKSKeyboardInputHelper
@@ -459,6 +505,40 @@ static void WKSTriggerHapticFeedback(void) {
     return NO;
 }
 
+- (BOOL)switchToChineseInputMode {
+    id chineseMode = [self preferredChineseInputMode];
+    if (!chineseMode) {
+        return NO;
+    }
+    id currentMode = [self currentInputMode];
+    NSString *currentIdentifier = WKSIdentifierFromMode(currentMode);
+    NSString *targetIdentifier = WKSIdentifierFromMode(chineseMode);
+    if (targetIdentifier.length > 0 && [targetIdentifier isEqualToString:currentIdentifier]) {
+        return YES;
+    }
+    if ([self switchToInputModeObject:chineseMode]) {
+        return YES;
+    }
+    return NO;
+}
+
+- (BOOL)switchToEnglishInputMode {
+    id englishMode = [self preferredEnglishInputMode];
+    if (!englishMode) {
+        return NO;
+    }
+    id currentMode = [self currentInputMode];
+    NSString *currentIdentifier = WKSIdentifierFromMode(currentMode);
+    NSString *targetIdentifier = WKSIdentifierFromMode(englishMode);
+    if (targetIdentifier.length > 0 && [targetIdentifier isEqualToString:currentIdentifier]) {
+        return YES;
+    }
+    if ([self switchToInputModeObject:englishMode]) {
+        return YES;
+    }
+    return NO;
+}
+
 @end
 
 @interface WKSKeyboardGestureHandler : NSObject <UIGestureRecognizerDelegate>
@@ -536,6 +616,9 @@ static void WKSTriggerHapticFeedback(void) {
     if (gesture.state != UIGestureRecognizerStateRecognized) {
         return;
     }
+    if (!WKSShouldActivate()) {
+        return;
+    }
 
     CFTimeInterval now = CACurrentMediaTime();
     if (_lastTrigger > 0 && (now - _lastTrigger) < kGestureDebounceInterval) {
@@ -544,8 +627,22 @@ static void WKSTriggerHapticFeedback(void) {
     }
     _lastTrigger = now;
 
-    BOOL didToggle = [[WKSKeyboardInputHelper sharedHelper] toggleBetweenChineseAndEnglish];
-    if (didToggle) {
+    BOOL isUpGesture = (gesture == _swipeUp) || ((gesture.direction & UISwipeGestureRecognizerDirectionUp) != 0);
+    BOOL targetChinese = isUpGesture ? !kPrefInvertDirection : kPrefInvertDirection;
+
+    WKSKeyboardInputHelper *helper = [WKSKeyboardInputHelper sharedHelper];
+    BOOL didSwitch = NO;
+    if (targetChinese) {
+        didSwitch = [helper switchToChineseInputMode];
+    } else {
+        didSwitch = [helper switchToEnglishInputMode];
+    }
+
+    if (!didSwitch) {
+        didSwitch = [helper toggleBetweenChineseAndEnglish];
+    }
+
+    if (didSwitch) {
         WKSTriggerHapticFeedback();
     }
 }
@@ -553,6 +650,9 @@ static void WKSTriggerHapticFeedback(void) {
 #pragma mark - UIGestureRecognizerDelegate
 
 - (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)gestureRecognizer {
+    if (!WKSShouldActivate()) {
+        return NO;
+    }
     if (!_keyboardView) {
         return NO;
     }
@@ -567,6 +667,9 @@ static void WKSTriggerHapticFeedback(void) {
 }
 
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldReceiveTouch:(UITouch *)touch {
+    if (!WKSShouldActivate()) {
+        return NO;
+    }
     if (!_keyboardView) {
         return NO;
     }
@@ -627,10 +730,8 @@ static void WKSDetachGesturesFromKeyboardView(UIView *keyboardView) {
 
 - (void)didMoveToWindow {
     %orig;
-    if (!WKSShouldActivate()) {
-        return;
-    }
-    if (self.window) {
+    BOOL shouldActivate = WKSShouldActivate();
+    if (self.window && shouldActivate) {
         WKSAttachGesturesToKeyboardView(self);
     } else {
         WKSDetachGesturesFromKeyboardView(self);
@@ -643,10 +744,8 @@ static void WKSDetachGesturesFromKeyboardView(UIView *keyboardView) {
 
 - (void)didMoveToWindow {
     %orig;
-    if (!WKSShouldActivate()) {
-        return;
-    }
-    if (self.window) {
+    BOOL shouldActivate = WKSShouldActivate();
+    if (self.window && shouldActivate) {
         WKSAttachGesturesToKeyboardView(self);
     } else {
         WKSDetachGesturesFromKeyboardView(self);
@@ -657,9 +756,9 @@ static void WKSDetachGesturesFromKeyboardView(UIView *keyboardView) {
 
 %ctor {
     @autoreleasepool {
-        if (WKSShouldActivate()) {
-            WKSLog(@"WeChatKeyboardSwitch initialized");
-            %init;
-        }
+        WKSLoadPreferences();
+        WKSRegisterForPreferenceChanges();
+        %init;
+        WKSLog(@"WeChatKeyboardSwitch loaded - Enabled: %d, OnlyWeChat: %d", kPrefEnabled, kPrefOnlyWeChat);
     }
 }
