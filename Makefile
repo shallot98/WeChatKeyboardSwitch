@@ -9,6 +9,7 @@ include $(THEOS)/makefiles/common.mk
 TWEAK_NAME = WeChatKeyboardSwitch
 
 WeChatKeyboardSwitch_FILES = Tweak.xm
-WeChatKeyboardSwitch_CFLAGS = -fobjc-arc
+WeChatKeyboardSwitch_CFLAGS = -fobjc-arc -Wno-deprecated-declarations
+WeChatKeyboardSwitch_FRAMEWORKS = UIKit QuartzCore CoreFoundation
 
 include $(THEOS)/makefiles/tweak.mk
