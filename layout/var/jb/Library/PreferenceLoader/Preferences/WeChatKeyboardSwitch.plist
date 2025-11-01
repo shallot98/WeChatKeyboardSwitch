@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Title</key>
+    <string>WeChat Keyboard Switch</string>
+    <key>Items</key>
+    <array>
+        <dict>
+            <key>cell</key>
+            <string>PSGroupCell</string>
+            <key>label</key>
+            <string>Configuration</string>
+        </dict>
+        <dict>
+            <key>Key</key>
+            <string>enabled</string>
+            <key>Default</key>
+            <true/>
+            <key>Type</key>
+            <string>PSwitchCell</string>
+            <key>label</key>
+            <string>Enabled</string>
+        </dict>
+    </array>
+    <key>Section</key>
+    <string>Tweaks</string>
+</dict>
+</plist>

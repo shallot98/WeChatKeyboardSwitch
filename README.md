@@ -1,360 +1,63 @@
 # WeChat Keyboard Switch
 
-[![Build Status](https://github.com/yourusername/WeChatKeyboardSwitch/workflows/Build%20WeChat%20Keyboard%20Switch/badge.svg)](https://github.com/yourusername/WeChatKeyboardSwitch/actions)
-[![iOS](https://img.shields.io/badge/iOS-16.0%2B-blue.svg)](https://www.apple.com/ios/)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+A minimal Theos-based iOS tweak skeleton for rootless jailbreak targeting iOS 16.5.
 
-A jailbreak tweak that enables Chinese/English input method switching via keyboard swipe gestures when using WeChat keyboard globally across all apps.
+## Overview
 
-## Features
+This is a basic rootless tweak skeleton configured for iOS 16.5+ development.
 
-- 🔄 **Quick Input Switching**: Swipe up/down on keyboard to switch between Chinese and English
-- ⚙️ **Settings Toggle**: Enable/disable the tweak from iOS Settings app
-- 🌍 **Global Support**: Works in all apps when WeChat keyboard is active
-- 🎯 **WeChat Keyboard Only**: Specifically targets WeChat/Weixin input methods
-- 🔋 **Lightweight**: Minimal performance impact
-- 📱 **Modern iOS**: Full support for iOS 16, 17, and newer versions
-- 🪝 **Rootless Ready**: Complete rootless jailbreak support
+## Requirements
+
+- iOS 16.5 or later
+- Rootless jailbreak (Dopamine, Palera1n, etc.)
+- Theos build system
+
+## Building
+
+```bash
+export THEOS=/path/to/theos
+make package
+```
+
+This will generate a `.deb` package that installs to rootless paths (`/var/jb`).
 
 ## Installation
 
-### Prerequisites
-
-- iOS 16.0 or later
-- Rootless jailbreak (Dopamine, Palera1n, etc.)
-- Theos build system (for building from source)
-- WeChat keyboard/input method installed and enabled
-
-### From Source
-
-1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/WeChatKeyboardSwitch.git
-cd WeChatKeyboardSwitch
+make install THEOS_DEVICE_IP=<device-ip> THEOS_DEVICE_PORT=22
 ```
 
-2. Make sure Theos is properly set up:
-```bash
-export THEOS=/path/to/theos
-```
-
-3. Build the tweak:
-```bash
-make package
-```
-
-4. Install the generated .deb file:
-```bash
-make install
-# or manually install with your package manager
-```
-
-5. Respring your device
-
-### From Package Manager
-
-(If published to a repository)
-
-1. Add the repository to your package manager
-2. Search for "WeChat Keyboard Switch"
-3. Install the package
-4. Respring your device
-
-### From GitHub Actions (Recommended)
-
-No local Theos installation required! Get pre-built packages:
-
-1. Go to the repository's [Actions tab](../../actions)
-2. Click on the latest successful workflow run
-3. Download the artifact `WeChatKeyboardSwitch-rootless-{version}`
-4. Extract the `.deb` file
-5. Install on your device using SSH, Filza, or package manager
-
-For automatic builds on every commit and tagged releases, see [CI/CD Setup Guide](.github/CI_SETUP.md).
-
-## Usage
-
-### Setup
-
-1. Make sure WeChat keyboard is installed and added to your keyboard list:
-   - Go to **Settings → General → Keyboard → Keyboards**
-   - Add WeChat/Weixin keyboard if not already added
-
-2. Enable the tweak:
-   - Open **Settings** app
-   - Scroll down to find **WeChat Keyboard Switch**
-   - Toggle **Enable** switch to ON
-
-3. Respring for changes to take effect (optional but recommended)
-
-### Gestures
-
-Once enabled, when WeChat keyboard is active in any app:
-
-- **Swipe UP** on keyboard → Switch to **English** input mode
-- **Swipe DOWN** on keyboard → Switch to **Chinese** input mode
-
-The tweak automatically detects when WeChat keyboard is active and only responds to gestures in that context.
+Or manually install the generated `.deb` file using your preferred package manager.
 
 ## Configuration
 
-The tweak stores preferences in the rootless-compatible location:
-```
-/var/jb/var/mobile/Library/Preferences/com.yourrepo.wechatkeyboardswitch.plist
-```
+- **Bundle ID**: `com.example.wechatkeyboardswitch`
+- **Version**: 1.0.0
+- **Target**: iOS 16.5+
+- **Architecture**: arm64
+- **Jailbreak Type**: Rootless
 
-Preferences are loaded on tweak initialization and updated in real-time via Darwin notifications when changed in Settings.
+## Dependencies
 
-## Compatibility
-
-### iOS Versions
-- ✅ iOS 16.0 - 16.7
-- ✅ iOS 17.0+
-- ✅ Future iOS versions (as long as keyboard APIs remain compatible)
-
-### Jailbreak Types
-- ✅ Rootless jailbreaks (Dopamine, Palera1n)
-- ✅ Semi-untethered jailbreaks
-- ✅ Checkra1n-based setups
-
-### Device Support
-- ✅ iPhone (all models running iOS 16+)
-- ✅ iPad (all models running iOS 16+)
-
-## Technical Details
-
-### Architecture
-
-The tweak hooks into iOS keyboard frameworks using Logos syntax and is organized into modular helper components:
-
-**Core Classes:**
-- **PrefsManager**: Handles preference loading and Darwin notification callbacks
-- **KeyboardSurfaceFinder**: Locates the optimal keyboard view for gesture attachment (UIRemoteKeyboardWindow → UIInputSetHostView → UIKBKeyplaneView)
-- **ModeSwitcher**: Manages input mode detection and switching with verification
-- **GestureManager**: Handles swipe and pan gesture recognition with debouncing
-
-**iOS Private APIs:**
-- **UIKeyboardImpl**: Main keyboard implementation class
-- **UIKeyboardInputModeController**: Manages input mode switching
-- **UIKeyboardInputMode**: Represents individual input modes
-- **UIRemoteKeyboardWindow**: Remote keyboard window for iOS 16+
-
-### Key Components
-
-1. **Gesture Recognition**: 
-   - Primary: UISwipeGestureRecognizer (up/down) attached to keyboard surface
-   - Fallback: UIPanGestureRecognizer with velocity/translation thresholds
-   - Debouncing (250ms) to prevent double triggers
-   - Hardware keyboard detection to disable when external keyboard is active
-   - Non-interfering settings (cancelsTouchesInView = NO) to preserve normal typing
-
-2. **Input Mode Detection**: 
-   - Identifies WeChat keyboard by identifier patterns (com.tencent.xin, WeChat, Weixin)
-   - Distinguishes between Chinese (zh-Hans, Pinyin) and English (en_US) modes
-   - Falls back to system keyboards when WeChat variants aren't available
-   - Verifies mode switch success and retries once if needed
-
-3. **Preference Management**: 
-   - Darwin notifications for real-time settings updates
-   - No respring required after toggling enable/disable
-   - Rootless-compatible preferences path
-
-4. **Safety & Resilience**:
-   - All private API calls wrapped with respondsToSelector checks
-   - Weak references to keyboard views to prevent memory leaks
-   - Exception handling around mode switching logic
-   - All UI operations dispatched on main thread
-   - Compile-time DEBUG flag for conditional logging
-
-### Files
-
-- `Tweak.xm` - Main tweak implementation with hooks
-- `Makefile` - Build configuration for rootless
-- `control` - Package metadata
-- `WeChatKeyboardSwitch.plist` - MobileSubstrate filter (UIKit bundle)
-- `wechatkeyboardswitchprefs/` - PreferenceBundle for Settings integration
-
-## Troubleshooting
-
-### Gestures Not Working
-
-1. **Check if tweak is enabled**:
-   - Go to Settings → WeChat Keyboard Switch
-   - Ensure "Enable" toggle is ON
-
-2. **Verify WeChat keyboard is active**:
-   - The tweak only works when WeChat/Weixin keyboard is the current input method
-   - Switch to WeChat keyboard before attempting gestures
-
-3. **Respring the device**:
-   ```bash
-   killall SpringBoard
-   ```
-
-4. **Check tweak injection**:
-   - Make sure the tweak is properly installed in `/var/jb/Library/MobileSubstrate/DynamicLibraries/`
-
-### Settings Not Appearing
-
-1. **Check PreferenceLoader**:
-   - Ensure PreferenceLoader is installed
-   - Respring after installing the tweak
-
-2. **Verify preference bundle installation**:
-   ```bash
-   ls /var/jb/Library/PreferenceBundles/ | grep WeChatKeyboardSwitch
-   ```
-
-### Input Mode Not Switching
-
-1. **Ensure multiple WeChat input modes are enabled**:
-   - You need both Chinese and English WeChat keyboard variants added
-   - Go to Settings → General → Keyboard → Keyboards
-
-2. **Check logs for errors**:
-   ```bash
-   # Use your preferred logging tool
-   syslog | grep WeChatKeyboardSwitch
-   ```
-
-## Building from Source
-
-### Requirements
-
-- macOS or Linux with Theos installed
-- iOS SDK (comes with Xcode or Theos)
-- ARM64 compiler toolchain
-
-### Build Commands
-
-```bash
-# Clean build
-make clean
-
-# Build for debugging
-make DEBUG=1
-
-# Build package
-make package
-
-# Install to device via SSH
-make install THEOS_DEVICE_IP=your.device.ip THEOS_DEVICE_PORT=22
-
-# Build and install in one command
-make do
-```
-
-## Development
-
-### Project Structure
-
-```
-WeChatKeyboardSwitch/
-├── Tweak.xm                          # Main tweak code
-├── Makefile                          # Build configuration
-├── control                           # Package metadata
-├── WeChatKeyboardSwitch.plist       # MobileSubstrate filter
-├── wechatkeyboardswitchprefs/       # Settings bundle
-│   ├── Makefile
-│   ├── entry.plist
-│   ├── WeChatKeyboardSwitchPrefsRootListController.h
-│   ├── WeChatKeyboardSwitchPrefsRootListController.m
-│   └── Resources/
-│       └── Root.plist               # Settings UI definition
-└── README.md
-```
-
-### Adding Features
-
-To modify or extend the tweak:
-
-1. Edit `Tweak.xm` for functionality changes
-2. Update `Resources/Root.plist` for new settings
-3. Rebuild and test on device
-
-### Debugging
-
-Debug logging is controlled by the DEBUG flag at compile time:
-
-```bash
-# Build with debug logging enabled
-make DEBUG=1 package
-
-# Build without debug logging (release)
-make package
-```
-
-View logs in real-time:
-```bash
-ssh root@device.ip
-tail -f /var/log/syslog | grep WeChatKeyboardSwitch
-# or
-log stream --predicate 'processImagePath contains "WeChatKeyboardSwitch"' --level debug
-```
-
-## Known Issues
-
-- Some third-party keyboard managers may interfere with gesture recognition
-- WeChat keyboard must have both Chinese and English variants enabled in iOS settings
-- Gestures are disabled when hardware keyboard is connected (by design)
-
-## Contributing
-
-Contributions are welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly on your device
-5. Submit a pull request
+- `mobilesubstrate`
+- `firmware (>= 15.0)`
 
 ## License
 
-This project is provided as-is for educational and personal use. 
+MIT License - see LICENSE file for details.
 
-## Credits
+## Structure
 
-- Developed for the jailbreak community
-- Built with Theos framework
-- Uses iOS private APIs for keyboard manipulation
+```
+.
+├── Tweak.x                      # Main tweak implementation
+├── Makefile                     # Build configuration
+├── control                      # Package metadata
+├── WeChatKeyboardSwitch.plist  # MobileSubstrate filter
+├── layout/                      # Rootless install layout
+└── LICENSE                      # MIT License
+```
 
-## Disclaimer
+## Notes
 
-This tweak modifies system behavior and requires a jailbroken device. Use at your own risk. The author is not responsible for any damage or data loss that may occur from using this tweak.
-
-## Support
-
-For issues, questions, or feature requests:
-- Open an issue on GitHub
-- Contact via email (if provided)
-- Join discussion on relevant jailbreak forums/subreddits
-
-## Changelog
-
-### Version 1.1.0 (Refactored Release)
-- ♻️ Complete refactor for iOS 16+ reliability
-- ✨ Modular architecture with PrefsManager, KeyboardSurfaceFinder, ModeSwitcher, and GestureManager
-- ✨ Robust keyboard surface detection (UIRemoteKeyboardWindow → UIInputSetHostView → UIKBKeyplaneView)
-- ✨ Pan gesture fallback with velocity/translation thresholds
-- ✨ 250ms debouncing to prevent double triggers
-- ✨ Hardware keyboard detection
-- ✨ Mode switch verification with automatic retry
-- ✨ Weak references to prevent memory leaks
-- ✨ Comprehensive respondsToSelector checks for all private APIs
-- ✨ Compile-time DEBUG flag for conditional logging
-- ✨ Non-interfering gesture settings (cancelsTouchesInView = NO)
-- 🐛 Fixed gesture interference with normal typing and scrolling
-- 📚 Updated documentation with technical architecture details
-
-### Version 1.0.0 (Initial Release)
-- ✨ Initial implementation
-- ✨ Swipe up/down gesture support
-- ✨ Settings bundle with enable toggle
-- ✨ iOS 16+ support
-- ✨ Full rootless compatibility
-- ✨ Real-time preference updates
-- ✨ Global keyboard support
-
----
-
-**Enjoy seamless Chinese/English switching with WeChat keyboard! 🎉**
+This is a skeleton project intended as a starting point for tweak development. The tweak currently logs a message on SpringBoard launch to verify proper injection.
