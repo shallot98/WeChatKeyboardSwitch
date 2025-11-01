@@ -1,29 +1,62 @@
 # WeChatKeyboardSwitch
 
-Rootless Theos tweak skeleton targeting WeChat (`com.tencent.xin`). Currently this project is a scaffold with no functional hooks.
+A rootless Theos tweak that enhances keyboard input switching in WeChat through intuitive swipe gestures. Compatible with iOS 13.0 - 16.5.
 
-## Requirements
+## Features
+
+- 🎯 **Gesture-based keyboard switching**: Swipe left or right on the keyboard to switch between Chinese (Simplified) Pinyin and English input modes
+- ⚙️ **Configurable settings**: Customize behavior through the Settings app
+  - Enable/disable the tweak
+  - Restrict to WeChat only or enable system-wide
+  - Invert swipe direction
+  - Toggle haptic feedback
+- 🔒 **Safe and efficient**: Debounced gesture recognition with smart exclusion zones
+- 🏗️ **Rootless compatible**: Built specifically for modern rootless jailbreaks
+
+## Installation
+
+### From Release (Recommended)
+
+1. Download the latest `.deb` package from the [Releases](https://github.com/shallot98/WeChatKeyboardSwitch/releases) page
+2. Transfer the `.deb` file to your jailbroken iOS device via SSH, Filza, or your preferred method
+3. Install using your package manager (Sileo, Zebra) or via command line:
+   ```bash
+   dpkg -i com.wechat.keyboardswitch_0.1.0_iphoneos-arm64.deb
+   ```
+4. Respring your device
+5. Configure the tweak in **Settings → WeChatKeyboardSwitch**
+
+### Building from Source
+
+#### Requirements
 
 - [Theos](https://theos.dev/) environment configured with the latest iOS 16.5 SDK
 - Rootless packaging support (`THEOS_PACKAGE_SCHEME = rootless`)
 
-## Building
+#### Build Steps
 
 ```bash
+# Clone the repository
+git clone https://github.com/shallot98/WeChatKeyboardSwitch.git
+cd WeChatKeyboardSwitch
+
+# Build the package
 make package
+
+# Install to device (set THEOS_DEVICE_IP first)
+make install
 ```
 
 The generated rootless `.deb` will be placed inside the `packages/` directory.
 
-## Installing
+## Usage
 
-Use `ssh` or `sftp` to copy the generated package to your jailbroken device and install via `sileo`, `zebra`, or `dpkg` (for rootless setups use `ldid` / `dpkg` inside your rootless shell).
+1. Open WeChat and start typing in any text field
+2. When the keyboard is visible, swipe left or right on the keyboard area to switch input modes
+3. The keyboard will automatically switch between Chinese Pinyin and English
+4. Haptic feedback confirms the switch (if enabled in settings)
 
-Example (assuming `THEOS_DEVICE_IP` is set):
-
-```bash
-make install
-```
+**Note**: Avoid swiping on the bottom area of the keyboard (space bar region) to prevent accidental switches.
 
 ## Continuous Integration
 

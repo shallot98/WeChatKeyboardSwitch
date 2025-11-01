@@ -1,0 +1,116 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-release:
+    name: Build and Create Release
+    runs-on: macos-13
+    permissions:
+      contents: write
+    env:
+      THEOS: $HOME/theos
+      THEOS_PACKAGE_SCHEME: rootless
+      FINALPACKAGE: 1
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Cache Theos environment
+        id: cache-theos
+        uses: actions/cache@v3
+        with:
+          path: ${{ env.THEOS }}
+          key: theos-${{ runner.os }}-release-${{ hashFiles('Makefile', 'control', 'layout/**', 'Tweak.xm', 'WeChatKeyboardSwitchPrefs/**/*') }}
+          restore-keys: |
+            theos-${{ runner.os }}-release-
+            theos-${{ runner.os }}-
+
+      - name: Install build dependencies
+        run: |
+          brew install ldid make dpkg fakeroot gnu-sed
+
+      - name: Set up Theos toolchain and SDK
+        if: steps.cache-theos.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          git clone --recursive https://github.com/theos/theos.git "$THEOS"
+          curl -L --fail https://github.com/theos/ios-toolchain-clang/releases/latest/download/ios-toolchain.tar.xz -o /tmp/ios-toolchain.tar.xz
+          tar -xJf /tmp/ios-toolchain.tar.xz -C /tmp
+          TOOLCHAIN_SRC=$(find /tmp -maxdepth 1 -type d -name "ios-toolchain*" | head -n 1)
+          if [ -z "$TOOLCHAIN_SRC" ]; then
+            echo "Unable to locate extracted toolchain directory" >&2
+            exit 1
+          fi
+          mkdir -p "$THEOS/toolchains"
+          rm -rf "$THEOS/toolchains/ios"
+          mv "$TOOLCHAIN_SRC" "$THEOS/toolchains/ios"
+          curl -L --fail https://github.com/theos/sdks/releases/download/16.5/iphoneos16.5.sdk.tar.xz -o /tmp/iphoneos16.5.sdk.tar.xz
+          mkdir -p "$THEOS/sdks"
+          tar -xJf /tmp/iphoneos16.5.sdk.tar.xz -C "$THEOS/sdks"
+          rm -f /tmp/ios-toolchain.tar.xz /tmp/iphoneos16.5.sdk.tar.xz
+
+      - name: Configure toolchain path
+        run: echo "$THEOS/toolchains/ios/bin" >> $GITHUB_PATH
+
+      - name: Build package
+        run: |
+          set -euo pipefail
+          make clean
+          make package
+
+      - name: Capture package metadata
+        id: package-meta
+        run: |
+          set -euo pipefail
+          VERSION=$(awk '/^Version:/ {print $2}' control)
+          PACKAGE=$(awk '/^Package:/ {print $2}' control)
+          DEB_FILE=$(ls -1 packages/*.deb | head -n 1)
+          DEB_NAME=$(basename "$DEB_FILE")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "package=$PACKAGE" >> $GITHUB_OUTPUT
+          echo "deb_file=$DEB_FILE" >> $GITHUB_OUTPUT
+          echo "deb_name=$DEB_NAME" >> $GITHUB_OUTPUT
+
+      - name: Extract release notes
+        id: release-notes
+        run: |
+          set -euo pipefail
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          export TAG_VERSION
+          if [ -f CHANGELOG.md ]; then
+            python3 <<'PY'
+import os
+import re
+from pathlib import Path
+
+tag = os.environ["TAG_VERSION"]
+changelog = Path("CHANGELOG.md").read_text()
+pattern = rf"## \[{re.escape(tag)}\](.*?)(?:\n## \[|$)"
+match = re.search(pattern, changelog, re.S)
+if match:
+    notes = match.group(1).strip()
+else:
+    notes = f"Release {tag}"
+if not notes:
+    notes = f"Release {tag}"
+Path("/tmp/release_notes.txt").write_text(notes)
+PY
+          else
+            echo "Release ${TAG_VERSION}" > /tmp/release_notes.txt
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ${{ steps.package-meta.outputs.deb_file }}
+          body_path: /tmp/release_notes.txt
+          draft: false
+          prerelease: false
+          name: WeChatKeyboardSwitch ${{ steps.package-meta.outputs.version }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
