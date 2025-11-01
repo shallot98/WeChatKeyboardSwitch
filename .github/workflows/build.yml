@@ -47,18 +47,13 @@ jobs:
           echo "THEOS_PLATFORM_SDK_ROOT=$(xcode-select -p)" >> "$GITHUB_ENV"
           echo "DEVELOPER_DIR=$(xcode-select -p)" >> "$GITHUB_ENV"
 
-      - name: Ensure SDK availability (use Xcode SDKs or fallback to theos/sdks)
+      - name: Clone theos SDKs
         run: |
-          SDK_DIR="$(xcode-select -p)/Platforms/iPhoneOS.platform/Developer/SDKs"
-          if [ ! -d "$SDK_DIR" ] && [ ! -d "$HOME/theos/sdks" ]; then
-            echo "Xcode iPhoneOS SDKs not found; cloning theos/sdks as fallback"
-            git clone https://github.com/theos/sdks.git "$HOME/theos/sdks"
-          fi
+          git clone --depth=1 https://github.com/theos/sdks "$HOME/theos/sdks"
 
       - name: Build tweak (iOS16 + rootless-ready)
         env:
           THEOS: ${{ env.THEOS }}
-          THEOS_PLATFORM_SDK_ROOT: ${{ env.THEOS_PLATFORM_SDK_ROOT }}
         run: |
           set -euo pipefail
           make clean
@@ -69,12 +64,12 @@ jobs:
           else
             TARGET_ARG=""
           fi
-          if [ -n "${{ github.event.inputs.make_target }}" ]; then
+          if [ -n "${{ github.event.inputs.make_target }}" ]]; then
             MAKE_TGT=${{ github.event.inputs.make_target }}
           else
             MAKE_TGT=package
           fi
-          make $MAKE_TGT THEOS_PACKAGE_SCHEME=$SCHEME $TARGET_ARG
+          make $MAKE_TGT THEOS_PACKAGE_SCHEME=$SCHEME SDKROOT=$HOME/theos/sdks/iPhoneOS16.5.sdk $TARGET_ARG
 
       - name: Upload .deb artifact
         uses: actions/upload-artifact@v4
