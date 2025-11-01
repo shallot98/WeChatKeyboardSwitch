@@ -26,4 +26,4 @@ make install
 ```
 
 > **Note**
-> This project is currently a placeholder. Future updates will introduce actual functionality and a preferences bundle (`com.wechat.keyboardswitch.prefs`).
+> This project now includes a Preferences bundle (`com.wechat.keyboardswitch`) that can be configured in Settings.

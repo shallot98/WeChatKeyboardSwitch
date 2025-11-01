@@ -13,3 +13,6 @@ WeChatKeyboardSwitch_CFLAGS = -fobjc-arc -Wno-deprecated-declarations
 WeChatKeyboardSwitch_FRAMEWORKS = UIKit QuartzCore CoreFoundation
 
 include $(THEOS)/makefiles/tweak.mk
+
+SUBPROJECTS += WeChatKeyboardSwitchPrefs
+include $(THEOS_MAKE_PATH)/aggregate.mk
