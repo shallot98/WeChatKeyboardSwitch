@@ -7,4 +7,4 @@
 "INVERT_DIRECTION_SUBTITLE" = "交换向上和向下手势的作用。";
 "HAPTIC_FEEDBACK_LABEL" = "触感反馈";
 "HAPTIC_FEEDBACK_SUBTITLE" = "切换时提供触感反馈。";
-"FOOTER_TEXT" = "更改立即生效，无需重新注销。";
+"FOOTER_TEXT" = "更改立即生效，无需重新启动。";

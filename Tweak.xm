@@ -7,6 +7,7 @@
 #import <UIKit/UIKit.h>
 #import <QuartzCore/QuartzCore.h>
 #import <CoreFoundation/CoreFoundation.h>
+#import <dispatch/dispatch.h>
 #import <objc/message.h>
 #import <objc/runtime.h>
 
@@ -19,6 +20,49 @@
 #else
 #define WKSLog(fmt, ...) ((void)0)
 #endif
+
+static BOOL WKSIsMainThread(void) {
+    return [NSThread isMainThread];
+}
+
+static void WKSPerformOnMainThread(void (^block)(void)) {
+    if (!block) {
+        return;
+    }
+    if (WKSIsMainThread()) {
+        block();
+    } else {
+        dispatch_sync(dispatch_get_main_queue(), block);
+    }
+}
+
+static BOOL WKSPerformOnMainThreadReturningBOOL(BOOL (^block)(void)) {
+    if (!block) {
+        return NO;
+    }
+    if (WKSIsMainThread()) {
+        return block();
+    }
+    __block BOOL result = NO;
+    dispatch_sync(dispatch_get_main_queue(), ^{
+        result = block();
+    });
+    return result;
+}
+
+static id WKSPerformOnMainThreadReturningId(id (^block)(void)) {
+    if (!block) {
+        return nil;
+    }
+    if (WKSIsMainThread()) {
+        return block();
+    }
+    __block id result = nil;
+    dispatch_sync(dispatch_get_main_queue(), ^{
+        result = block();
+    });
+    return result;
+}
 
 static NSString * const kWeChatBundleIdentifier = @"com.tencent.xin";
 static NSString * const kPreferencesDomain = @"com.wechat.keyboardswitch";
@@ -82,6 +126,13 @@ static void WKSCallSelectorWithObject(id target, SEL selector, id object) {
         return;
     }
     ((void (*)(id, SEL, id))objc_msgSend)(target, selector, object);
+}
+
+static id WKSCallSelectorReturningIdWithObject(id target, SEL selector, id object) {
+    if (!target || !selector || ![target respondsToSelector:selector]) {
+        return nil;
+    }
+    return ((id (*)(id, SEL, id))objc_msgSend)(target, selector, object);
 }
 
 static NSString *WKSIdentifierFromMode(id mode) {
@@ -188,12 +239,16 @@ static void WKSLoadPreferences(void) {
     kPrefOnlyWeChat = WKSGetBoolPreference(CFSTR("OnlyWeChat"), YES);
     kPrefInvertDirection = WKSGetBoolPreference(CFSTR("InvertDirection"), NO);
     kPrefHapticFeedback = WKSGetBoolPreference(CFSTR("HapticFeedback"), YES);
+#if WKS_DEBUG
     WKSLog(@"Preferences loaded - Enabled: %d, OnlyWeChat: %d, InvertDirection: %d, HapticFeedback: %d",
            kPrefEnabled, kPrefOnlyWeChat, kPrefInvertDirection, kPrefHapticFeedback);
+#endif
 }
 
 static void WKSPreferencesChanged(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo) {
+#if WKS_DEBUG
     WKSLog(@"Received preferences change notification");
+#endif
     WKSLoadPreferences();
 }
 
@@ -212,9 +267,11 @@ static BOOL WKSIsWeChatProcess(void) {
     dispatch_once(&onceToken, ^{
         NSString *bundleIdentifier = [[NSBundle mainBundle] bundleIdentifier];
         isWeChat = [bundleIdentifier isEqualToString:kWeChatBundleIdentifier];
+#if WKS_DEBUG
         if (!isWeChat) {
             WKSLog(@"Running in bundle: %@", bundleIdentifier);
         }
+#endif
     });
     return isWeChat;
 }
@@ -273,60 +330,73 @@ static void WKSTriggerHapticFeedback(void) {
 }
 
 - (id)inputModeController {
-    Class controllerClass = NSClassFromString(@"UIKeyboardInputModeController");
-    if (!controllerClass) {
-        return nil;
-    }
-    SEL selectors[] = { @selector(sharedInstance), NSSelectorFromString(@"sharedInputModeController") };
-    for (NSUInteger i = 0; i < sizeof(selectors) / sizeof(selectors[0]); i++) {
-        SEL sel = selectors[i];
-        if ([controllerClass respondsToSelector:sel]) {
-            return WKSCallSelectorReturningId(controllerClass, sel);
+    return WKSPerformOnMainThreadReturningId(^id{
+        Class controllerClass = NSClassFromString(@"UIKeyboardInputModeController");
+        if (!controllerClass) {
+            return nil;
         }
-    }
-    return nil;
+        SEL selectors[] = { @selector(sharedInstance), NSSelectorFromString(@"sharedInputModeController") };
+        for (NSUInteger i = 0; i < sizeof(selectors) / sizeof(selectors[0]); i++) {
+            SEL sel = selectors[i];
+            if ([controllerClass respondsToSelector:sel]) {
+                id controller = WKSCallSelectorReturningId(controllerClass, sel);
+                if (controller) {
+                    return controller;
+                }
+            }
+        }
+        return nil;
+    });
 }
 
 - (NSArray *)activeInputModes {
-    id controller = [self inputModeController];
-    SEL activeSel = @selector(activeInputModes);
-    NSArray *activeModes = nil;
-    if (controller && [controller respondsToSelector:activeSel]) {
-        activeModes = WKSCallSelectorReturningId(controller, activeSel);
-    }
-    if (!activeModes && [UITextInputMode respondsToSelector:@selector(activeInputModes)]) {
-        activeModes = [UITextInputMode activeInputModes];
-    }
-    if (![activeModes isKindOfClass:[NSArray class]]) {
+    NSArray *modes = WKSPerformOnMainThreadReturningId(^id{
+        id controller = [self inputModeController];
+        SEL activeSel = @selector(activeInputModes);
+        id activeModes = nil;
+        if (controller && [controller respondsToSelector:activeSel]) {
+            activeModes = WKSCallSelectorReturningId(controller, activeSel);
+        }
+        if (!activeModes && [UITextInputMode respondsToSelector:@selector(activeInputModes)]) {
+            activeModes = [UITextInputMode activeInputModes];
+        }
+        if (![activeModes isKindOfClass:[NSArray class]]) {
+            return @[];
+        }
+        return activeModes;
+    });
+    if (![modes isKindOfClass:[NSArray class]]) {
         return @[];
     }
-    return activeModes;
+    return modes;
 }
 
 - (id)currentInputMode {
-    id controller = [self inputModeController];
-    SEL currentSel = @selector(currentInputMode);
-    if (controller && [controller respondsToSelector:currentSel]) {
-        id mode = WKSCallSelectorReturningId(controller, currentSel);
-        if (mode) {
-            return mode;
+    return WKSPerformOnMainThreadReturningId(^id{
+        id controller = [self inputModeController];
+        SEL currentSel = @selector(currentInputMode);
+        if (controller && [controller respondsToSelector:currentSel]) {
+            id mode = WKSCallSelectorReturningId(controller, currentSel);
+            if (mode) {
+                return mode;
+            }
         }
-    }
-    UIKeyboardImpl *impl = [UIKeyboardImpl activeInstance];
-    if (!impl) {
-        impl = [UIKeyboardImpl sharedInstance];
-    }
-    if (impl && [impl respondsToSelector:@selector(inputMode)]) {
-        id mode = WKSCallSelectorReturningId(impl, @selector(inputMode));
-        if (mode) {
-            return mode;
+        UIKeyboardImpl *impl = [UIKeyboardImpl activeInstance];
+        if (!impl) {
+            impl = [UIKeyboardImpl sharedInstance];
         }
-    }
-    NSArray *activeModes = [self activeInputModes];
-    return activeModes.count > 0 ? activeModes.firstObject : nil;
+        if (impl && [impl respondsToSelector:@selector(inputMode)]) {
+            id mode = WKSCallSelectorReturningId(impl, @selector(inputMode));
+            if (mode) {
+                return mode;
+            }
+        }
+        NSArray *activeModes = [self activeInputModes];
+        return activeModes.count > 0 ? activeModes.firstObject : nil;
+    });
 }
 
-- (id)findModeMatchingPredicate:(BOOL (^)(NSString *identifier, NSString *language))predicate {
+- (NSString *)findIdentifierMatchingPredicate:(BOOL (^)(NSString *identifier, NSString *language))predicate {
     if (!predicate) {
         return nil;
     }
@@ -334,109 +404,173 @@ static void WKSTriggerHapticFeedback(void) {
         NSString *identifier = WKSIdentifierFromMode(mode);
         NSString *language = WKSPrimaryLanguageFromMode(mode);
         if (predicate(identifier, language)) {
-            return mode;
+            return identifier;
         }
     }
     return nil;
 }
 
-- (id)preferredChineseInputMode {
-    id pinyinMode = [self findModeMatchingPredicate:^BOOL(NSString *identifier, NSString *language) {
+- (id)canonicalInputModeForIdentifier:(NSString *)identifier {
+    if (identifier.length == 0) {
+        return nil;
+    }
+    return WKSPerformOnMainThreadReturningId(^id{
+        id controller = [self inputModeController];
+        SEL lookupSel = @selector(keyboardInputModeWithIdentifier:);
+        if (controller && [controller respondsToSelector:lookupSel]) {
+            id mode = WKSCallSelectorReturningIdWithObject(controller, lookupSel, identifier);
+            if (mode) {
+                return mode;
+            }
+        }
+        for (id mode in [self activeInputModes]) {
+            NSString *candidate = WKSIdentifierFromMode(mode);
+            if (candidate.length > 0 && [candidate isEqualToString:identifier]) {
+                return mode;
+            }
+        }
+        return nil;
+    });
+}
+
+- (NSString *)preferredChineseInputModeIdentifier {
+    NSString *identifier = [self findIdentifierMatchingPredicate:^BOOL(NSString *identifier, NSString *language) {
         return WKSIdentifierMatchesChinesePinyin(identifier);
     }];
-    if (pinyinMode) {
-        return pinyinMode;
+    if (identifier.length > 0) {
+        return identifier;
     }
-    return [self findModeMatchingPredicate:^BOOL(NSString *identifier, NSString *language) {
+    return [self findIdentifierMatchingPredicate:^BOOL(NSString *identifier, NSString *language) {
         return WKSIdentifierMatchesChineseSimplified(identifier, language);
     }];
 }
 
-- (id)preferredEnglishInputMode {
-    return [self findModeMatchingPredicate:^BOOL(NSString *identifier, NSString *language) {
+- (id)preferredChineseInputMode {
+    NSString *identifier = [self preferredChineseInputModeIdentifier];
+    if (identifier.length == 0) {
+        return nil;
+    }
+    return [self canonicalInputModeForIdentifier:identifier];
+}
+
+- (NSString *)preferredEnglishInputModeIdentifier {
+    return [self findIdentifierMatchingPredicate:^BOOL(NSString *identifier, NSString *language) {
         return WKSIdentifierMatchesEnglish(identifier, language);
     }];
+}
+
+- (id)preferredEnglishInputMode {
+    NSString *identifier = [self preferredEnglishInputModeIdentifier];
+    if (identifier.length == 0) {
+        return nil;
+    }
+    return [self canonicalInputModeForIdentifier:identifier];
+}
+
+- (BOOL)switchToInputModeIdentifier:(NSString *)identifier {
+    if (identifier.length == 0) {
+        return NO;
+    }
+    id currentMode = [self currentInputMode];
+    NSString *currentIdentifier = WKSIdentifierFromMode(currentMode);
+    if (currentIdentifier.length > 0 && [currentIdentifier isEqualToString:identifier]) {
+        return YES;
+    }
+    id targetMode = [self canonicalInputModeForIdentifier:identifier];
+    if (!targetMode) {
+        return NO;
+    }
+    return [self switchToInputModeObject:targetMode];
 }
 
 - (BOOL)switchToInputModeObject:(id)mode {
     if (!mode) {
         return NO;
     }
-    id controller = [self inputModeController];
-    UIKeyboardImpl *impl = [UIKeyboardImpl activeInstance];
-    if (!impl) {
-        impl = [UIKeyboardImpl sharedInstance];
-    }
+    return WKSPerformOnMainThreadReturningBOOL(^BOOL{
+        id controller = [self inputModeController];
+        UIKeyboardImpl *impl = [UIKeyboardImpl activeInstance];
+        if (!impl) {
+            impl = [UIKeyboardImpl sharedInstance];
+        }
 
-    BOOL didInvoke = NO;
-    SEL setInputModeSel = @selector(setInputMode:);
-    if (impl && [impl respondsToSelector:setInputModeSel]) {
-        WKSCallSelectorWithObject(impl, setInputModeSel, mode);
-        didInvoke = YES;
-    }
+        BOOL didInvoke = NO;
 
-    if (!didInvoke && controller) {
         SEL setCurrentSel = @selector(setCurrentInputMode:);
-        if ([controller respondsToSelector:setCurrentSel]) {
+        if (controller && [controller respondsToSelector:setCurrentSel]) {
             WKSCallSelectorWithObject(controller, setCurrentSel, mode);
             didInvoke = YES;
         }
-    }
 
-    if (didInvoke && impl) {
-        SEL refreshSelectors[] = {
-            NSSelectorFromString(@"updateLayout"),
-            NSSelectorFromString(@"forceLayout"),
-            @selector(setNeedsLayout),
-            @selector(layoutIfNeeded)
-        };
-        for (NSUInteger i = 0; i < sizeof(refreshSelectors) / sizeof(refreshSelectors[0]); i++) {
-            SEL selector = refreshSelectors[i];
-            if (selector && [impl respondsToSelector:selector]) {
-                WKSCallSelector(impl, selector);
+        SEL setInputModeSel = @selector(setInputMode:);
+        if (impl && [impl respondsToSelector:setInputModeSel]) {
+            WKSCallSelectorWithObject(impl, setInputModeSel, mode);
+            didInvoke = YES;
+        }
+
+        if (didInvoke && impl) {
+            SEL refreshSelectors[] = {
+                NSSelectorFromString(@"updateLayout"),
+                NSSelectorFromString(@"forceLayout"),
+                @selector(setNeedsLayout),
+                @selector(layoutIfNeeded)
+            };
+            for (NSUInteger i = 0; i < sizeof(refreshSelectors) / sizeof(refreshSelectors[0]); i++) {
+                SEL selector = refreshSelectors[i];
+                if (selector && [impl respondsToSelector:selector]) {
+                    WKSCallSelector(impl, selector);
+                }
             }
         }
-    }
 
-    if (didInvoke) {
-        NSString *targetIdentifier = WKSIdentifierFromMode(mode);
-        WKSLog(@"Requested switch to input mode: %@", targetIdentifier);
-    }
+#if WKS_DEBUG
+        if (didInvoke) {
+            NSString *targetIdentifier = WKSIdentifierFromMode(mode);
+            WKSLog(@"Requested switch to input mode: %@", targetIdentifier);
+        }
+#endif
 
-    return didInvoke;
+        return didInvoke;
+    });
 }
 
 - (BOOL)cycleToNextInputMode {
-    UIKeyboardImpl *impl = [UIKeyboardImpl activeInstance];
-    if (!impl) {
-        impl = [UIKeyboardImpl sharedInstance];
-    }
-    NSArray<NSString *> *implSelectors = @[ @"setInputModeToNextInPreferredList",
-                                            @"setInputModeToNextInPreferenceList",
-                                            @"advanceToNextInputMode",
-                                            @"switchToNextInputMode" ];
-    for (NSString *selName in implSelectors) {
-        SEL selector = NSSelectorFromString(selName);
-        if (selector && impl && [impl respondsToSelector:selector]) {
-            WKSCallSelector(impl, selector);
-            WKSLog(@"Cycled input mode using selector: %@", selName);
-            return YES;
+    return WKSPerformOnMainThreadReturningBOOL(^BOOL{
+        UIKeyboardImpl *impl = [UIKeyboardImpl activeInstance];
+        if (!impl) {
+            impl = [UIKeyboardImpl sharedInstance];
         }
-    }
+        NSArray<NSString *> *implSelectors = @[ @"setInputModeToNextInPreferredList",
+                                                @"setInputModeToNextInPreferenceList",
+                                                @"advanceToNextInputMode",
+                                                @"switchToNextInputMode" ];
+        for (NSString *selName in implSelectors) {
+            SEL selector = NSSelectorFromString(selName);
+            if (selector && impl && [impl respondsToSelector:selector]) {
+                WKSCallSelector(impl, selector);
+#if WKS_DEBUG
+                WKSLog(@"Cycled input mode using selector: %@", selName);
+#endif
+                return YES;
+            }
+        }
 
-    id controller = [self inputModeController];
-    NSArray<NSString *> *controllerSelectors = @[ @"advanceToNextInputMode",
-                                                  @"cycleToNextInputModePreference",
-                                                  @"switchToNextInputMode" ];
-    for (NSString *selName in controllerSelectors) {
-        SEL selector = NSSelectorFromString(selName);
-        if (selector && controller && [controller respondsToSelector:selector]) {
-            WKSCallSelector(controller, selector);
-            WKSLog(@"Cycled input mode via controller selector: %@", selName);
-            return YES;
+        id controller = [self inputModeController];
+        NSArray<NSString *> *controllerSelectors = @[ @"advanceToNextInputMode",
+                                                      @"cycleToNextInputModePreference",
+                                                      @"switchToNextInputMode" ];
+        for (NSString *selName in controllerSelectors) {
+            SEL selector = NSSelectorFromString(selName);
+            if (selector && controller && [controller respondsToSelector:selector]) {
+                WKSCallSelector(controller, selector);
+#if WKS_DEBUG
+                WKSLog(@"Cycled input mode via controller selector: %@", selName);
+#endif
+                return YES;
+            }
         }
-    }
-    return NO;
+        return NO;
+    });
 }
 
 - (BOOL)toggleBetweenChineseAndEnglish {
@@ -448,51 +582,49 @@ static void WKSTriggerHapticFeedback(void) {
                              WKSIdentifierMatchesChineseSimplified(currentIdentifier, currentLanguage);
     BOOL currentIsEnglish = WKSIdentifierMatchesEnglish(currentIdentifier, currentLanguage);
 
-    id chineseMode = [self preferredChineseInputMode];
-    id englishMode = [self preferredEnglishInputMode];
+    NSString *chineseIdentifier = [self preferredChineseInputModeIdentifier];
+    NSString *englishIdentifier = [self preferredEnglishInputModeIdentifier];
 
-    NSMutableArray *candidates = [NSMutableArray array];
+    NSMutableOrderedSet<NSString *> *candidateIdentifiers = [NSMutableOrderedSet orderedSet];
 
     if (currentIsChinese) {
-        if (englishMode) {
-            [candidates addObject:englishMode];
+        if (englishIdentifier.length > 0) {
+            [candidateIdentifiers addObject:englishIdentifier];
         }
-        if (chineseMode && chineseMode != currentMode) {
-            [candidates addObject:chineseMode];
+        if (chineseIdentifier.length > 0) {
+            [candidateIdentifiers addObject:chineseIdentifier];
         }
     } else if (currentIsEnglish) {
-        if (chineseMode) {
-            [candidates addObject:chineseMode];
+        if (chineseIdentifier.length > 0) {
+            [candidateIdentifiers addObject:chineseIdentifier];
         }
-        if (englishMode && englishMode != currentMode) {
-            [candidates addObject:englishMode];
+        if (englishIdentifier.length > 0) {
+            [candidateIdentifiers addObject:englishIdentifier];
         }
     } else {
-        if (englishMode) {
-            [candidates addObject:englishMode];
+        if (englishIdentifier.length > 0) {
+            [candidateIdentifiers addObject:englishIdentifier];
         }
-        if (chineseMode) {
-            [candidates addObject:chineseMode];
+        if (chineseIdentifier.length > 0) {
+            [candidateIdentifiers addObject:chineseIdentifier];
         }
     }
 
-    for (id candidate in candidates) {
-        if (!candidate || candidate == currentMode) {
+    if (englishIdentifier.length > 0) {
+        [candidateIdentifiers addObject:englishIdentifier];
+    }
+    if (chineseIdentifier.length > 0) {
+        [candidateIdentifiers addObject:chineseIdentifier];
+    }
+
+    for (NSString *identifier in candidateIdentifiers) {
+        if (identifier.length == 0) {
             continue;
         }
-        if ([self switchToInputModeObject:candidate]) {
-            return YES;
+        if (currentIdentifier.length > 0 && [identifier isEqualToString:currentIdentifier]) {
+            continue;
         }
-    }
-
-    if (englishMode && englishMode != currentMode && ![candidates containsObject:englishMode]) {
-        if ([self switchToInputModeObject:englishMode]) {
-            return YES;
-        }
-    }
-
-    if (chineseMode && chineseMode != currentMode && ![candidates containsObject:chineseMode]) {
-        if ([self switchToInputModeObject:chineseMode]) {
+        if ([self switchToInputModeIdentifier:identifier]) {
             return YES;
         }
     }
@@ -501,40 +633,32 @@ static void WKSTriggerHapticFeedback(void) {
         return YES;
     }
 
+#if WKS_DEBUG
     WKSLog(@"Unable to toggle input mode - no action performed");
+#endif
     return NO;
 }
 
 - (BOOL)switchToChineseInputMode {
-    id chineseMode = [self preferredChineseInputMode];
-    if (!chineseMode) {
-        return NO;
-    }
-    id currentMode = [self currentInputMode];
-    NSString *currentIdentifier = WKSIdentifierFromMode(currentMode);
-    NSString *targetIdentifier = WKSIdentifierFromMode(chineseMode);
-    if (targetIdentifier.length > 0 && [targetIdentifier isEqualToString:currentIdentifier]) {
+    NSString *identifier = [self preferredChineseInputModeIdentifier];
+    if ([self switchToInputModeIdentifier:identifier]) {
         return YES;
     }
-    if ([self switchToInputModeObject:chineseMode]) {
-        return YES;
+    id fallbackMode = [self preferredChineseInputMode];
+    if (fallbackMode) {
+        return [self switchToInputModeObject:fallbackMode];
     }
     return NO;
 }
 
 - (BOOL)switchToEnglishInputMode {
-    id englishMode = [self preferredEnglishInputMode];
-    if (!englishMode) {
-        return NO;
-    }
-    id currentMode = [self currentInputMode];
-    NSString *currentIdentifier = WKSIdentifierFromMode(currentMode);
-    NSString *targetIdentifier = WKSIdentifierFromMode(englishMode);
-    if (targetIdentifier.length > 0 && [targetIdentifier isEqualToString:currentIdentifier]) {
+    NSString *identifier = [self preferredEnglishInputModeIdentifier];
+    if ([self switchToInputModeIdentifier:identifier]) {
         return YES;
     }
-    if ([self switchToInputModeObject:englishMode]) {
-        return YES;
+    id fallbackMode = [self preferredEnglishInputMode];
+    if (fallbackMode) {
+        return [self switchToInputModeObject:fallbackMode];
     }
     return NO;
 }
@@ -597,7 +721,9 @@ static void WKSTriggerHapticFeedback(void) {
         [view addGestureRecognizer:_swipeDown];
     }
 
+#if WKS_DEBUG
     WKSLog(@"Attached swipe gestures to keyboard view: %@", view);
+#endif
 }
 
 - (void)detach {
@@ -622,7 +748,9 @@ static void WKSTriggerHapticFeedback(void) {
 
     CFTimeInterval now = CACurrentMediaTime();
     if (_lastTrigger > 0 && (now - _lastTrigger) < kGestureDebounceInterval) {
+#if WKS_DEBUG
         WKSLog(@"Gesture ignored due to debounce (%.2f s)", now - _lastTrigger);
+#endif
         return;
     }
     _lastTrigger = now;
@@ -630,21 +758,23 @@ static void WKSTriggerHapticFeedback(void) {
     BOOL isUpGesture = (gesture == _swipeUp) || ((gesture.direction & UISwipeGestureRecognizerDirectionUp) != 0);
     BOOL targetChinese = isUpGesture ? !kPrefInvertDirection : kPrefInvertDirection;
 
-    WKSKeyboardInputHelper *helper = [WKSKeyboardInputHelper sharedHelper];
-    BOOL didSwitch = NO;
-    if (targetChinese) {
-        didSwitch = [helper switchToChineseInputMode];
-    } else {
-        didSwitch = [helper switchToEnglishInputMode];
-    }
+    WKSPerformOnMainThread(^{
+        WKSKeyboardInputHelper *helper = [WKSKeyboardInputHelper sharedHelper];
+        BOOL didSwitch = NO;
+        if (targetChinese) {
+            didSwitch = [helper switchToChineseInputMode];
+        } else {
+            didSwitch = [helper switchToEnglishInputMode];
+        }
 
-    if (!didSwitch) {
-        didSwitch = [helper toggleBetweenChineseAndEnglish];
-    }
+        if (!didSwitch) {
+            didSwitch = [helper toggleBetweenChineseAndEnglish];
+        }
 
-    if (didSwitch) {
-        WKSTriggerHapticFeedback();
-    }
+        if (didSwitch) {
+            WKSTriggerHapticFeedback();
+        }
+    });
 }
 
 #pragma mark - UIGestureRecognizerDelegate
@@ -759,6 +889,8 @@ static void WKSDetachGesturesFromKeyboardView(UIView *keyboardView) {
         WKSLoadPreferences();
         WKSRegisterForPreferenceChanges();
         %init;
+#if WKS_DEBUG
         WKSLog(@"WeChatKeyboardSwitch loaded - Enabled: %d, OnlyWeChat: %d", kPrefEnabled, kPrefOnlyWeChat);
+#endif
     }
 }
