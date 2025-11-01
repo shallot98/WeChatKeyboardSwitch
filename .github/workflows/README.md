@@ -1,358 +1,401 @@
-# GitHub Actions Workflow Documentation
+# GitHub Actions CI/CD Documentation
 
 ## Overview
 
-This GitHub Actions workflow automatically builds the **WeChat Keyboard Switch** tweak for **rootless jailbreak** environments targeting **iOS 16+** using **macOS runners** with native Xcode toolchain.
+This GitHub Actions workflow provides automated building, testing, and release management for the WeChat Keyboard Switch tweak targeting **iOS 16.5+ rootless jailbreak** environments.
 
-## Workflow: `build.yml`
+## Workflow File
 
-### Triggers
+**Location**: `.github/workflows/build.yml`  
+**Name**: iOS 16.5 Rootless CI
 
-The workflow is triggered by:
+## Triggers
 
-- **Manual trigger** via GitHub Actions UI (workflow_dispatch) with customizable parameters
-- **Tags** starting with `v*` (e.g., `v1.0.0`) - automatically creates releases
+The workflow automatically runs on:
 
-### Workflow Inputs (Manual Trigger)
+### Push Events
+- Branches: `main`, `master`, `develop`, `ci/**`, `feature/**`
+- Tags: `v*` (e.g., `v1.0.0`, `v2.1.3`)
 
-When manually triggering the workflow, you can customize:
+### Pull Requests
+- Target branches: `main`, `master`, `develop`
 
-1. **package_scheme**: Choose between `rootless` (default) or `rootful` package schemes
-2. **theos_target**: Specify custom Theos TARGET (e.g., `iphone:clang:latest:16.0`, `iphone:clang:16.5:16.0`)
-3. **make_target**: Choose build target - `package` (default), `all`, or `debug`
+### Manual Dispatch
+- Available through GitHub Actions UI with no required inputs
 
-### Build Process
+## Jobs
 
-The workflow performs the following steps:
+### 1. Lint & Format
 
-1. **Checkout Repository**: Clones the repository with submodules
-2. **Install Dependencies**: Installs required build tools via Homebrew (ldid, make, dpkg, gnu-sed)
-3. **Install Theos**: Clones the latest Theos build system from GitHub
-4. **Ensure SDK Availability**: Uses Xcode's native iOS SDK or falls back to theos/sdks
-5. **Build Tweak**: Compiles the tweak and preference bundle with configurable scheme
-6. **Upload Artifacts**: Uploads the generated `.deb` package as a workflow artifact
-7. **Create Release** (for tags): Automatically publishes a GitHub release with the package
+**Purpose**: Validate code quality and metadata before building
 
-### macOS Runner Benefits
+**Runs on**: `macos-latest`
 
-The workflow uses **macOS-13** runners which provide:
+**Checks performed**:
+- Source file formatting (trailing whitespace, newlines, carriage returns)
+- Property list (`.plist`) file validation
+- Control file metadata validation
 
-- ✅ Native Xcode toolchain and iOS SDK included
-- ✅ No need to manually install iOS toolchain
-- ✅ No libplist dependency issues
-- ✅ Better compatibility with iOS development tools
-- ✅ Proven reliability (used by KeySwipe11 and other projects)
+**Exit behavior**: Fails the workflow if any check fails
 
-### Rootless Support
+---
 
-The workflow supports both **rootless** and **rootful** jailbreak environments:
+### 2. Build Package
 
-- Default: `THEOS_PACKAGE_SCHEME=rootless` (builds for `/var/jb/` structure)
-- Optional: `THEOS_PACKAGE_SCHEME=rootful` (builds for traditional rooted jailbreak)
-- Compatible with Dopamine, Palera1n (rootless), XinaA15, and other rootless jailbreaks
+**Purpose**: Compile the tweak and create a `.deb` package
 
-### iOS 16+ Compatibility
+**Runs on**: `macos-latest`
 
-- Uses iOS SDK from Xcode (16.0+ compatible)
-- Builds for arm64 and arm64e architectures (configured in Makefile)
-- Minimum deployment target: iOS 16.0
-- Supports iOS 16, 17, and newer versions
+**Dependencies**: Requires `lint` job to pass
 
-### Project Structure
+**Key features**:
+- Uses Xcode's native toolchain
+- Caches Theos, iOS SDK, and toolchain for faster builds
+- Downloads iOS 16.5 SDK from theos/sdks repository
+- Builds with `FINALPACKAGE=1` for deterministic output
+- Verifies `.deb` package creation
 
-The build includes:
+**Build configuration**:
+- **Target**: iOS 16.5+
+- **Architecture**: arm64
+- **Package scheme**: rootless
+- **Compiler flags**: `-Werror` (fail on warnings)
 
-- **Main Tweak** (`Tweak.xm`): Keyboard gesture recognition and input mode switching
-- **PreferenceBundle** (`wechatkeyboardswitchprefs/`): Settings integration
-- **MobileSubstrate Filter**: UIKit injection configuration
-- **PreferenceLoader Entry**: Settings app integration
+**Artifacts**:
+- Uploads `.deb` package as `wechatkeyboardswitch-rootless-deb`
+- Available for 90 days by default
 
-### Artifacts
+---
 
-After a successful build, the following artifacts are available:
+### 3. Publish Release
 
-1. **DEB Package**: `wechatkeyboardswitch-rootless-deb`
-   - Located in workflow artifacts
-   - Can be downloaded and installed on jailbroken devices
-   - Compatible with Sileo, Zebra, Installer, and other package managers
-   - Includes both the tweak dylib and preference bundle
+**Purpose**: Create GitHub releases with attached `.deb` files
 
-### Usage
+**Runs on**: `ubuntu-latest`
 
-#### Manual Build
+**Trigger**: Only when a tag matching `v*` is pushed
 
-1. Go to the "Actions" tab in your GitHub repository
-2. Select "Build WeChatKeyboardSwitch" workflow
-3. Click "Run workflow" button
-4. Configure build options:
-   - **Branch**: Select the branch to build from
-   - **Package scheme**: Choose `rootless` or `rootful`
-   - **Theos TARGET**: (Optional) Specify custom target like `iphone:clang:latest:16.0`
-   - **Make target**: Choose `package`, `all`, or `debug`
-5. Click "Run workflow"
+**Dependencies**: Requires `build` job to pass
 
-#### Creating a Release
+**Actions**:
+- Downloads build artifact from the build job
+- Generates release notes with installation instructions
+- Creates GitHub release with `.deb` attachment
+- Marks release as non-draft and non-prerelease
 
-To create a release with automatic package attachment:
+---
+
+## Caching Strategy
+
+The workflow uses GitHub Actions cache to speed up builds:
+
+### Cached Items
+1. **Theos** (`~/theos`)
+   - Key: `${{ runner.os }}-theos-rootless-v1`
+   - Includes core Theos build system
+
+2. **Theos Toolchain** (`~/theos/toolchain`)
+   - Automatically installed if not cached
+   - Uses native toolchain from theos/toolchain repository
+
+3. **iOS 16.5 SDK** (`~/theos/sdks`)
+   - Contains iOS 16.5 SDK from theos/sdks
+   - Verified before build
+
+### Cache Benefits
+- Reduces build time from ~5 minutes to ~2 minutes
+- Consistent, reproducible builds
+- Lower network usage
+
+---
+
+## Usage Examples
+
+### Creating a Pull Request
+
+When you open a PR to `main`, `master`, or `develop`:
+
+1. Lint checks run automatically
+2. Build job compiles the tweak
+3. `.deb` artifact is uploaded
+4. Review build logs and download artifact from Actions tab
+
+### Releasing a Version
+
+To create a release:
 
 ```bash
-# Tag your version
+# Ensure code is ready
+git add .
+git commit -m "feat: add new feature"
+git push origin main
+
+# Create and push tag
 git tag v1.0.0
 git push origin v1.0.0
 ```
 
 The workflow will:
-- Build the package with rootless scheme
-- Create a GitHub release
+- Run lint and build jobs
+- Create a GitHub Release at `https://github.com/OWNER/REPO/releases/tag/v1.0.0`
 - Attach the `.deb` file to the release
+- Generate release notes
 
-### Downloading Build Artifacts
+### Manual Build
 
-1. Navigate to the "Actions" tab
-2. Click on the specific workflow run
-3. Scroll down to "Artifacts" section
-4. Download the `wechatkeyboardswitch-rootless-deb` artifact
-5. Extract the `.deb` package from the zip file
-6. Install on your jailbroken device
+1. Navigate to Actions tab
+2. Select "iOS 16.5 Rootless CI" workflow
+3. Click "Run workflow"
+4. Select branch
+5. Click "Run workflow" button
 
-### Installation on Device
+---
 
-After downloading the `.deb` file:
+## Build Requirements
 
-#### Method 1: SSH Installation
+### System Dependencies
+- macOS runner (GitHub-hosted)
+- Xcode (pre-installed on runner)
+- Homebrew packages: `ldid`, `dpkg`, `gnu-sed`
 
-```bash
-# Transfer to device
-scp com.yourrepo.wechatkeyboardswitch_*.deb root@<device-ip>:/var/mobile/
+### Theos Dependencies
+- Theos build system
+- Theos toolchain
+- iOS 16.5 SDK
 
-# SSH to device
-ssh root@<device-ip>
+### Project Dependencies
+- Valid `Makefile` with Theos configuration
+- Valid `control` file with package metadata
+- Source files: `Tweak.x`, layouts, plists
 
-# Install package
-cd /var/mobile
-dpkg -i com.yourrepo.wechatkeyboardswitch_*.deb
+---
 
-# Respring
-killall SpringBoard
-```
+## Artifacts
 
-#### Method 2: Package Manager
+### Build Artifacts
 
-1. Transfer the `.deb` file to your device
-2. Open your package manager (Sileo, Zebra, Installer)
-3. Navigate to the file location
-4. Tap to install
-5. Respring when prompted
+**Name**: `wechatkeyboardswitch-rootless-deb`
 
-#### Method 3: Filza
+**Contents**: 
+- `.deb` package file
+- Format: `com.example.wechatkeyboardswitch_VERSION_iphoneos-arm64.deb`
 
-1. Transfer the `.deb` file to device using AirDrop or iTunes
-2. Open Filza File Manager
-3. Navigate to the file location
-4. Tap the `.deb` file
-5. Tap "Install"
-6. Respring
+**Retention**: 90 days (GitHub default)
 
-### Environment Variables
+**Download**:
+1. Go to Actions tab
+2. Select workflow run
+3. Scroll to "Artifacts" section
+4. Click artifact name to download
 
-The workflow sets the following environment variables:
+---
 
-- `THEOS`: Path to Theos installation (`$HOME/theos`)
-- `THEOS_PLATFORM_SDK_ROOT`: Path to Xcode developer tools
-- `DEVELOPER_DIR`: Path to Xcode developer directory
+## Makefile Configuration
 
-### Build Configuration
-
-From `Makefile`:
+The workflow expects the following Makefile configuration:
 
 ```makefile
-TARGET := iphone:clang:16.5:16.0
-ARCHS = arm64 arm64e
+TARGET := iphone:clang:latest:16.5
+ARCHS = arm64
 INSTALL_TARGET_PROCESSES = SpringBoard
 THEOS_PACKAGE_SCHEME = rootless
 
 TWEAK_NAME = WeChatKeyboardSwitch
-WeChatKeyboardSwitch_FILES = Tweak.xm
-WeChatKeyboardSwitch_CFLAGS = -fobjc-arc
+WeChatKeyboardSwitch_FILES = Tweak.x
+WeChatKeyboardSwitch_CFLAGS = -fobjc-arc -Werror
 WeChatKeyboardSwitch_FRAMEWORKS = UIKit Foundation
-WeChatKeyboardSwitch_PRIVATE_FRAMEWORKS = Preferences
-
-SUBPROJECTS += wechatkeyboardswitchprefs
 ```
 
-### Dependencies
-
-The workflow installs via Homebrew:
-
-- ldid (code signing)
-- make (build system)
-- dpkg (package creation)
-- gnu-sed (text processing)
-
-### Package Dependencies
-
-From `control` file:
-
-- mobilesubstrate (Cydia Substrate)
-- preferenceloader (Settings integration)
-- firmware >= 16.0 (iOS 16+)
-
-### Troubleshooting
-
-#### Build Fails
-
-1. Check the workflow logs in the Actions tab
-2. Verify the Makefile configuration
-3. Ensure `control` file has correct dependencies
-4. Check SDK compatibility
-5. Verify all source files are present
-
-#### SDK Not Found
-
-The workflow uses Xcode's native iOS SDK. If it fails:
-- Xcode tools should be pre-installed on macOS runners
-- Fallback to theos/sdks repository if needed
-- Check workflow logs for SDK-related errors
-
-#### Package Not Generated
-
-Ensure:
-- Makefile syntax is correct
-- All source files are present (`Tweak.xm`, preference bundle files)
-- No compilation errors in code
-- PreferenceBundle Makefile is correct
-
-#### PreferenceBundle Build Fails
-
-Check:
-- `wechatkeyboardswitchprefs/Makefile` exists and is correct
-- All `.m` and `.h` files are present
-- `Resources/Root.plist` is valid XML
-- `entry.plist` is properly formatted
-
-### Customization
-
-To customize the workflow:
-
-1. Edit `.github/workflows/build.yml`
-2. Modify build steps as needed
-3. Update Theos TARGET via workflow inputs
-4. Change package scheme via workflow inputs
-5. Add additional build steps if required
-
-Example: Building for different iOS versions:
-
-```bash
-# Via workflow_dispatch input
-Theos TARGET: iphone:clang:17.0:16.0  # iOS 17 SDK, minimum iOS 16
-```
-
-### CI/CD Best Practices
-
-1. **Version Tags**: Use semantic versioning for releases (v1.0.0, v1.1.0, etc.)
-2. **Commit Messages**: Use conventional commits (feat:, fix:, docs:, etc.)
-3. **Branch Strategy**: Develop on feature branches, merge to main for releases
-4. **Testing**: Test the built package on actual devices before creating releases
-5. **Documentation**: Update CHANGELOG.md with each release
-
-### Workflow Status Badge
-
-Add this badge to your README to show build status:
-
-```markdown
-![Build Status](https://github.com/yourusername/WeChatKeyboardSwitch/workflows/Build%20WeChatKeyboardSwitch/badge.svg)
-```
-
-### Related Documentation
-
-- [Main README](../../README.md) - User guide and features
-- [INSTALLATION.md](../../INSTALLATION.md) - Installation instructions
-- [CONTRIBUTING.md](../../CONTRIBUTING.md) - Contribution guidelines
-- [CHANGELOG.md](../../CHANGELOG.md) - Version history
-- [QUICK_REFERENCE.md](../../QUICK_REFERENCE.md) - Quick reference guide
-- [Theos Documentation](https://theos.dev) - Theos build system
-
-### Support
-
-For issues related to:
-- **Workflow**: Open an issue in this repository
-- **Build errors**: Check Makefile and source code
-- **Installation**: See [INSTALLATION.md](../../INSTALLATION.md)
-- **Usage**: See [README.md](../../README.md)
-
-### Advanced Usage
-
-#### Building Locally vs CI
-
-The workflow uses the same build commands you can use locally (on macOS):
-
-```bash
-# Local build (with Theos installed on macOS)
-export THEOS=~/theos
-make clean
-make package
-
-# CI build (automatic)
-git tag v1.0.0
-git push origin v1.0.0
-```
-
-#### Building Different Schemes
-
-```bash
-# Rootless (default)
-make package THEOS_PACKAGE_SCHEME=rootless
-
-# Rootful
-make package THEOS_PACKAGE_SCHEME=rootful
-```
-
-#### Multi-Architecture Builds
-
-The Makefile is configured for multiple architectures:
-
-```makefile
-ARCHS = arm64 arm64e
-```
-
-This builds for both standard ARM64 and ARM64e (pointer authentication) devices.
-
-#### Debug vs Release Builds
-
-For debug builds (via workflow input):
-- Select `make_target: debug`
-
-For release builds (default):
-- Select `make_target: package`
+Key requirements:
+- `THEOS_PACKAGE_SCHEME = rootless`
+- `-Werror` flag to fail on warnings
+- `TWEAK_NAME` must be defined
 
 ---
 
-## Quick Reference
+## Control File
 
-### Trigger Manual Build
-1. Actions tab → "Build WeChatKeyboardSwitch" → "Run workflow"
-2. Configure options → "Run workflow"
+Required fields in `control` file:
+- `Package`: Bundle identifier
+- `Name`: Display name
+- `Version`: Semantic version
+- `Architecture`: Target architecture
+- `Description`: Package description
 
-### Create Release
-```bash
-git tag v1.0.0
-git push origin v1.0.0
+Example:
 ```
-
-### Download Artifact
-1. Actions tab → Select run → Download `wechatkeyboardswitch-rootless-deb`
-
-### Install Package
-```bash
-dpkg -i *.deb && killall SpringBoard
+Package: com.example.wechatkeyboardswitch
+Name: WeChat Keyboard Switch
+Version: 1.0.0
+Architecture: iphoneos-arm64
+Description: Minimal rootless Theos tweak skeleton targeting iOS 16.5.
+Maintainer: Example Maintainer <maintainer@example.com>
+Author: Example Maintainer <maintainer@example.com>
+Section: Tweaks
+Depends: mobilesubstrate, firmware (>= 15.0)
+Priority: optional
 ```
 
 ---
 
-**Note**: This workflow supports both rootless and rootful jailbreak environments via the `package_scheme` input parameter.
+## Troubleshooting
 
-**Platform**: macOS-13 (with Xcode)  
-**Theos**: Latest from GitHub  
-**SDK**: Xcode iOS SDK (16.0+)  
-**Architecture**: ARM64 + ARM64e  
-**Package Format**: Debian (.deb)
+### Build Fails
+
+**Check**:
+1. Review Actions logs for error messages
+2. Verify Makefile syntax
+3. Ensure all source files are committed
+4. Check control file has required fields
+
+**Common issues**:
+- Missing `-Werror` warnings (now treated as errors)
+- Missing iOS 16.5 SDK (workflow downloads automatically)
+- Theos installation failure (check network connectivity)
+
+### Lint Fails
+
+**Check**:
+1. Trailing whitespace in source files
+2. Missing newlines at end of files
+3. Invalid plist files
+4. Missing control file fields
+
+**Fix**:
+```bash
+# Remove trailing whitespace
+git ls-files '*.x' '*.m' '*.h' | xargs sed -i '' 's/[[:space:]]*$//'
+
+# Validate plist files
+plutil -lint *.plist
+```
+
+### Cache Issues
+
+If cache causes problems:
+1. Update cache key version in workflow file
+2. Or manually delete caches in GitHub Settings → Actions → Caches
+
+### Release Not Created
+
+**Check**:
+1. Ensure tag matches `v*` pattern
+2. Verify `GITHUB_TOKEN` has write permissions
+3. Check if release already exists
+4. Review release job logs
+
+---
+
+## Best Practices
+
+### Version Tagging
+- Use semantic versioning: `v1.0.0`, `v2.1.3`
+- Update version in `control` file before tagging
+- Create annotated tags with messages:
+  ```bash
+  git tag -a v1.0.0 -m "Release version 1.0.0"
+  ```
+
+### Commit Messages
+- Use conventional commits: `feat:`, `fix:`, `docs:`, `chore:`
+- Keep messages concise and descriptive
+
+### Branch Strategy
+- Develop features in `feature/*` branches
+- Test in `develop` branch
+- Merge to `main` for releases
+- Tag from `main` branch
+
+### Testing
+- Always test `.deb` packages on real devices
+- Verify rootless installation path (`/var/jb`)
+- Test on iOS 16.5+ devices
+- Check with different jailbreak tools (Dopamine, Palera1n)
+
+---
+
+## Security
+
+### Secrets
+- Workflow uses `GITHUB_TOKEN` (automatically provided)
+- No additional secrets required
+- Token has `contents: write` permission for releases
+
+### Code Signing
+- Uses `ldid` for fake code signing
+- Sufficient for jailbroken devices
+- No Apple Developer account required
+
+---
+
+## Performance
+
+### Typical Build Times
+
+| Job | Duration | Notes |
+|-----|----------|-------|
+| Lint | ~30 seconds | Fast validation checks |
+| Build (first time) | ~4-5 minutes | Downloads Theos and SDK |
+| Build (cached) | ~1-2 minutes | Uses cached dependencies |
+| Release | ~30 seconds | Downloads artifact and creates release |
+
+### Optimization Tips
+- Keep cache keys stable for better hit rates
+- Use shallow clones (`--depth=1`) for Git repositories
+- Minimize unnecessary dependencies
+
+---
+
+## Platform Compatibility
+
+### Runner
+- **OS**: macOS (latest stable)
+- **Xcode**: Pre-installed (multiple versions available)
+- **Architecture**: x86_64 / arm64 (Apple Silicon)
+
+### Target Device
+- **iOS**: 16.5 or later
+- **Jailbreak**: Rootless (Dopamine, Palera1n, etc.)
+- **Architecture**: arm64
+
+---
+
+## Future Enhancements
+
+Potential improvements:
+- [ ] Add unit tests for Objective-C code
+- [ ] Integrate clang-format for automatic formatting
+- [ ] Add code signing with real certificates (optional)
+- [ ] Support multiple SDK versions in matrix builds
+- [ ] Add automatic changelog generation
+- [ ] Integrate with external package repositories
+
+---
+
+## Support and Contribution
+
+### Getting Help
+- Review workflow logs in Actions tab
+- Check this documentation
+- Open issues for problems
+- Consult Theos documentation: https://theos.dev
+
+### Contributing
+- Follow existing code style
+- Ensure lint checks pass
+- Test changes locally when possible
+- Update documentation for workflow changes
+
+---
+
+## References
+
+- [Theos Documentation](https://theos.dev)
+- [GitHub Actions Documentation](https://docs.github.com/en/actions)
+- [iOS Jailbreak Development](https://iphonedev.wiki)
+
+---
+
+**Last Updated**: November 2024  
+**Workflow Version**: 1.0.0  
+**Maintained by**: Repository maintainers
