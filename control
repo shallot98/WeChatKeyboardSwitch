@@ -1,10 +1,10 @@
-Package: com.yourrepo.wechatkeyboardswitch
+Package: com.example.wechatkeyboardswitch
 Name: WeChat Keyboard Switch
-Version: 1.1.0
+Version: 1.0.0
 Architecture: iphoneos-arm64
-Description: Reliable Chinese/English input method switching via keyboard swipe gestures for WeChat keyboard. Features robust gesture detection, debouncing, hardware keyboard detection, and deterministic mode switching for iOS 16+.
-Maintainer: Your Name
-Author: Your Name
+Description: Minimal rootless Theos tweak skeleton targeting iOS 16.5.
+Maintainer: Example Maintainer <maintainer@example.com>
+Author: Example Maintainer <maintainer@example.com>
 Section: Tweaks
-Depends: mobilesubstrate, preferenceloader, firmware (>= 16.0)
-Icon: https://example.com/icon.png
+Depends: mobilesubstrate, firmware (>= 15.0)
+Priority: optional
