@@ -125,18 +125,46 @@ Preferences are loaded on tweak initialization and updated in real-time via Darw
 
 ### Architecture
 
-The tweak hooks into iOS keyboard frameworks using Logos syntax:
+The tweak hooks into iOS keyboard frameworks using Logos syntax and is organized into modular helper components:
 
+**Core Classes:**
+- **PrefsManager**: Handles preference loading and Darwin notification callbacks
+- **KeyboardSurfaceFinder**: Locates the optimal keyboard view for gesture attachment (UIRemoteKeyboardWindow → UIInputSetHostView → UIKBKeyplaneView)
+- **ModeSwitcher**: Manages input mode detection and switching with verification
+- **GestureManager**: Handles swipe and pan gesture recognition with debouncing
+
+**iOS Private APIs:**
 - **UIKeyboardImpl**: Main keyboard implementation class
 - **UIKeyboardInputModeController**: Manages input mode switching
 - **UIKeyboardInputMode**: Represents individual input modes
+- **UIRemoteKeyboardWindow**: Remote keyboard window for iOS 16+
 
 ### Key Components
 
-1. **Gesture Recognition**: UISwipeGestureRecognizer instances added to keyboard view
-2. **Input Mode Detection**: Identifies WeChat keyboard by bundle identifier and language
-3. **Preference Management**: Darwin notifications for real-time settings updates
-4. **Rootless Paths**: All file operations use `/var/jb` prefix
+1. **Gesture Recognition**: 
+   - Primary: UISwipeGestureRecognizer (up/down) attached to keyboard surface
+   - Fallback: UIPanGestureRecognizer with velocity/translation thresholds
+   - Debouncing (250ms) to prevent double triggers
+   - Hardware keyboard detection to disable when external keyboard is active
+   - Non-interfering settings (cancelsTouchesInView = NO) to preserve normal typing
+
+2. **Input Mode Detection**: 
+   - Identifies WeChat keyboard by identifier patterns (com.tencent.xin, WeChat, Weixin)
+   - Distinguishes between Chinese (zh-Hans, Pinyin) and English (en_US) modes
+   - Falls back to system keyboards when WeChat variants aren't available
+   - Verifies mode switch success and retries once if needed
+
+3. **Preference Management**: 
+   - Darwin notifications for real-time settings updates
+   - No respring required after toggling enable/disable
+   - Rootless-compatible preferences path
+
+4. **Safety & Resilience**:
+   - All private API calls wrapped with respondsToSelector checks
+   - Weak references to keyboard views to prevent memory leaks
+   - Exception handling around mode switching logic
+   - All UI operations dispatched on main thread
+   - Compile-time DEBUG flag for conditional logging
 
 ### Files
 
@@ -246,23 +274,29 @@ To modify or extend the tweak:
 
 ### Debugging
 
-Enable debug logging by modifying the tweak code to include NSLog statements:
+Debug logging is controlled by the DEBUG flag at compile time:
 
-```objc
-NSLog(@"[WeChatKeyboardSwitch] Debug message: %@", someVariable);
+```bash
+# Build with debug logging enabled
+make DEBUG=1 package
+
+# Build without debug logging (release)
+make package
 ```
 
 View logs in real-time:
 ```bash
 ssh root@device.ip
 tail -f /var/log/syslog | grep WeChatKeyboardSwitch
+# or
+log stream --predicate 'processImagePath contains "WeChatKeyboardSwitch"' --level debug
 ```
 
 ## Known Issues
 
 - Some third-party keyboard managers may interfere with gesture recognition
-- Very fast swipes might not register consistently - moderate swipe speed recommended
-- First gesture after keyboard appears may have slight delay while gesture recognizers initialize
+- WeChat keyboard must have both Chinese and English variants enabled in iOS settings
+- Gestures are disabled when hardware keyboard is connected (by design)
 
 ## Contributing
 
@@ -296,6 +330,21 @@ For issues, questions, or feature requests:
 - Join discussion on relevant jailbreak forums/subreddits
 
 ## Changelog
+
+### Version 1.1.0 (Refactored Release)
+- ♻️ Complete refactor for iOS 16+ reliability
+- ✨ Modular architecture with PrefsManager, KeyboardSurfaceFinder, ModeSwitcher, and GestureManager
+- ✨ Robust keyboard surface detection (UIRemoteKeyboardWindow → UIInputSetHostView → UIKBKeyplaneView)
+- ✨ Pan gesture fallback with velocity/translation thresholds
+- ✨ 250ms debouncing to prevent double triggers
+- ✨ Hardware keyboard detection
+- ✨ Mode switch verification with automatic retry
+- ✨ Weak references to prevent memory leaks
+- ✨ Comprehensive respondsToSelector checks for all private APIs
+- ✨ Compile-time DEBUG flag for conditional logging
+- ✨ Non-interfering gesture settings (cancelsTouchesInView = NO)
+- 🐛 Fixed gesture interference with normal typing and scrolling
+- 📚 Updated documentation with technical architecture details
 
 ### Version 1.0.0 (Initial Release)
 - ✨ Initial implementation
