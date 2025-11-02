@@ -131,6 +131,7 @@ static dispatch_source_t gSwitchWatchdogTimer = nil;
 - (void)hardwareKeyboardAvailabilityDidChange;
 @end
 
+static BOOL WKSIsHardwareKeyboardConnected(void);
 static BOOL WKSViewIsEligibleKeyboardView(UIView *keyboardView);
 static void WKSAttachGesturesToKeyboardView(UIView *keyboardView);
 static void WKSDetachGesturesFromKeyboardView(UIView *keyboardView);
