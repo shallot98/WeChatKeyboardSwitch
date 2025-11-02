@@ -82,23 +82,23 @@ jobs:
           echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
           echo "$THEOS_PATH/bin" >> "$GITHUB_PATH"
 
-      - name: Prepare SDK
+      - name: Configure SDK
         run: |
           set -euo pipefail
-          : "${THEOS:=$HOME/theos}"
-          SDK_DIR="/Applications/Xcode_15.2.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs"
-          if [ -d "$SDK_DIR/iPhoneOS17.2.sdk" ]; then
-            echo "Using Xcode SDK at $SDK_DIR/iPhoneOS17.2.sdk"
-            echo "SDKROOT=$SDK_DIR/iPhoneOS17.2.sdk" >> "$GITHUB_ENV"
+          XCODE_SDK_PATH="/Applications/Xcode_15.2.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS17.2.sdk"
+          if [ -d "$XCODE_SDK_PATH" ]; then
+            echo "Using Xcode SDK: $XCODE_SDK_PATH"
+            echo "SDKROOT=$XCODE_SDK_PATH" >> "$GITHUB_ENV"
           else
-            echo "Xcode SDK not found at $SDK_DIR/iPhoneOS17.2.sdk, cloning Theos SDKs"
-            mkdir -p "$THEOS"
-            rm -rf "$THEOS/sdks"
-            git clone --depth=1 https://github.com/theos/sdks "$THEOS/sdks"
-            SDK_PATH="$THEOS/sdks/iPhoneOS16.5.sdk"
+            echo "Xcode SDK not found, falling back to theos SDKs"
+            mkdir -p "$HOME/theos/sdks"
+            if [ ! -d "$HOME/theos/sdks/.git" ]; then
+              git clone --depth=1 https://github.com/theos/sdks "$HOME/theos/sdks"
+            fi
+            SDK_PATH="$HOME/theos/sdks/iPhoneOS16.5.sdk"
             if [ ! -d "$SDK_PATH" ]; then
-              echo "Expected SDK not found at $SDK_PATH" >&2
-              ls -1 "$THEOS/sdks"
+              echo "Error: SDK not found at $SDK_PATH"
+              ls -la "$HOME/theos/sdks/" || true
               exit 1
             fi
             echo "SDKROOT=$SDK_PATH" >> "$GITHUB_ENV"
@@ -113,11 +113,24 @@ jobs:
           echo "MAKE_TARGET=${MAKE_TARGET}"
           echo "SDKROOT=${SDKROOT:-not set}"
 
-      - name: Build package
+      - name: Build tweak
         run: |
           set -euo pipefail
+          export THEOS="$HOME/theos"
           make clean
-          make "${MAKE_TARGET}" THEOS_PACKAGE_SCHEME="${THEOS_PACKAGE_SCHEME}" TARGET="${TARGET}"
+          make package THEOS_PACKAGE_SCHEME="${THEOS_PACKAGE_SCHEME}" TARGET="${TARGET}" FINALPACKAGE=1 2>&1 | tee build.log
+
+      - name: Debug build environment
+        if: failure()
+        run: |
+          echo "=== SDKROOT ==="
+          echo "$SDKROOT"
+          echo "=== Theos SDKs ==="
+          ls -la "$HOME/theos/sdks/" || echo "No theos sdks"
+          echo "=== Xcode SDKs ==="
+          ls -la /Applications/Xcode*.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/ || true
+          echo "=== Build log tail ==="
+          tail -100 build.log || true
 
       - name: Capture package metadata
         id: package-meta

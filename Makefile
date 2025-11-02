@@ -14,7 +14,7 @@ TWEAK_NAME = WeChatKeyboardSwitch
 
 WeChatKeyboardSwitch_FILES = Tweak.xm
 WeChatKeyboardSwitch_CFLAGS = -fobjc-arc -Wno-deprecated-declarations
-WeChatKeyboardSwitch_FRAMEWORKS = UIKit QuartzCore CoreFoundation AudioToolbox CoreAudioTypes
+WeChatKeyboardSwitch_FRAMEWORKS = UIKit QuartzCore CoreFoundation AudioToolbox
 
 include $(THEOS_MAKE_PATH)/tweak.mk
 
