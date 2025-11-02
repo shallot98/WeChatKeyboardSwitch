@@ -114,7 +114,28 @@ static dispatch_source_t gSwitchWatchdogTimer = nil;
 @interface UIKeyboardDockView : UIView
 @end
 
-@class WKSKeyboardLifecycleManager;
+@interface UIInputSetHostView : UIView
+@end
+
+@interface UIKBKeyplaneView : UIView
+@end
+
+@interface UIRemoteKeyboardWindow : UIWindow
+@end
+
+@interface WKSKeyboardLifecycleManager : NSObject
++ (instancetype)sharedManager;
+- (void)registerKeyboardView:(UIView *)keyboardView;
+- (void)unregisterKeyboardView:(UIView *)keyboardView;
+- (void)detachAllGestures;
+- (void)revalidateAllKeyboards;
+- (void)hardwareKeyboardAvailabilityDidChange;
+@end
+
+static BOOL WKSViewIsEligibleKeyboardView(UIView *keyboardView);
+static void WKSAttachGesturesToKeyboardView(UIView *keyboardView);
+static void WKSDetachGesturesFromKeyboardView(UIView *keyboardView);
+static void WKSScanForKeyboardViews(UIView *rootView, NSUInteger depth);
 
 @interface UIKeyboardImpl : UIView
 + (instancetype)activeInstance;
@@ -141,15 +162,6 @@ static dispatch_source_t gSwitchWatchdogTimer = nil;
 
 @interface UIResponder (WKSPrivate)
 - (id)_responderForEditing;
-@end
-
-@interface UITextField : UIControl <UITextInput>
-@end
-
-@interface UITextView : UIScrollView <UITextInput>
-@end
-
-@interface UISearchBar : UIView
 @end
 
 static id WKSCallSelectorReturningId(id target, SEL selector) {
@@ -1556,15 +1568,6 @@ static CGFloat WKSGestureRequiredDistance(void) {
 
 @end
 
-@interface WKSKeyboardLifecycleManager : NSObject
-+ (instancetype)sharedManager;
-- (void)registerKeyboardView:(UIView *)keyboardView;
-- (void)unregisterKeyboardView:(UIView *)keyboardView;
-- (void)detachAllGestures;
-- (void)revalidateAllKeyboards;
-- (void)hardwareKeyboardAvailabilityDidChange;
-@end
-
 @implementation WKSKeyboardLifecycleManager {
     NSHashTable<UIView *> *_trackedViews;
     BOOL _observersSetup;
@@ -1776,7 +1779,7 @@ static CGFloat WKSGestureRequiredDistance(void) {
     }
 
     if (!_swipeDown) {
-        _swipeDown = [[UISwipeGestureRecognizer alloc] initWithTarget=self action:@selector(handleSwipe:)];
+        _swipeDown = [[UISwipeGestureRecognizer alloc] initWithTarget:self action:@selector(handleSwipe:)];
         _swipeDown.direction = UISwipeGestureRecognizerDirectionDown;
         _swipeDown.delegate = self;
         _swipeDown.numberOfTouchesRequired = 1;
