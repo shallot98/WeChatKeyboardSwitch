@@ -34,8 +34,6 @@ jobs:
   build:
     name: Build package
     runs-on: macos-13
-    env:
-      THEOS: $HOME/theos
     outputs:
       package: ${{ steps.package-meta.outputs.package }}
       version: ${{ steps.package-meta.outputs.version }}
@@ -74,13 +72,15 @@ jobs:
       - name: Install Theos
         run: |
           set -euo pipefail
-          if [ ! -d "$THEOS" ]; then
-            git clone --recursive https://github.com/theos/theos.git "$THEOS"
+          THEOS_PATH="$HOME/theos"
+          if [ ! -d "$THEOS_PATH" ]; then
+            git clone --recursive https://github.com/theos/theos.git "$THEOS_PATH"
           else
-            git -C "$THEOS" pull --ff-only
-            git -C "$THEOS" submodule update --init --recursive
+            git -C "$THEOS_PATH" pull --ff-only
+            git -C "$THEOS_PATH" submodule update --init --recursive
           fi
-          echo "$THEOS/bin" >> "$GITHUB_PATH"
+          echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
+          echo "$THEOS_PATH/bin" >> "$GITHUB_PATH"
 
       - name: Prepare SDK
         run: |

@@ -1,4 +1,7 @@
-include $(THEOS)/makefiles/common.mk
+THEOS ?= $(HOME)/theos
+THEOS_MAKE_PATH ?= $(THEOS)/makefiles
+
+include $(THEOS_MAKE_PATH)/common.mk
 
 BUNDLE_NAME = WeChatKeyboardSwitchPrefs
 
