@@ -1,81 +1,122 @@
-name: Build rootless tweak
+name: Build WeChatKeyboardSwitch package
 
 on:
   push:
     branches:
       - main
-      - master
-  pull_request:
-    branches:
-      - main
-      - master
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      package_scheme:
+        description: 'Theos package scheme to use'
+        type: choice
+        required: false
+        default: rootless
+        options:
+          - rootless
+          - rootful
+      theos_target:
+        description: 'Theos TARGET triple'
+        required: false
+        default: iphone:clang:latest:16.5
+      make_target:
+        description: 'make target to invoke'
+        type: choice
+        required: false
+        default: package
+        options:
+          - package
+          - all
+          - debug
 
 jobs:
   build:
-    name: ${{ matrix.configuration }} build
+    name: Build package
     runs-on: macos-13
-    strategy:
-      fail-fast: false
-      matrix:
-        configuration: [Release]
     env:
       THEOS: $HOME/theos
-      THEOS_PACKAGE_SCHEME: rootless
-      FINALPACKAGE: 1
-
+    outputs:
+      package: ${{ steps.package-meta.outputs.package }}
+      version: ${{ steps.package-meta.outputs.version }}
+      artifact_name: ${{ steps.package-meta.outputs.artifact_name }}
     steps:
-      - name: Checkout source
+      - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Cache Theos environment
-        id: cache-theos
-        uses: actions/cache@v3
         with:
-          path: ${{ env.THEOS }}
-          key: theos-${{ runner.os }}-${{ matrix.configuration }}-${{ hashFiles('Makefile', 'control', 'layout/**', 'Tweak.xm', 'WeChatKeyboardSwitchPrefs/**/*') }}
-          restore-keys: |
-            theos-${{ runner.os }}-${{ matrix.configuration }}-
-            theos-${{ runner.os }}-
+          submodules: recursive
 
-      - name: Install build dependencies
-        run: |
-          brew install ldid make dpkg fakeroot gnu-sed
-
-      - name: Set up Theos toolchain and SDK
-        if: steps.cache-theos.outputs.cache-hit != 'true'
+      - name: Configure build parameters
         run: |
           set -euo pipefail
-          git clone --recursive https://github.com/theos/theos.git "$THEOS"
-          curl -L --fail https://github.com/theos/ios-toolchain-clang/releases/latest/download/ios-toolchain.tar.xz -o /tmp/ios-toolchain.tar.xz
-          tar -xJf /tmp/ios-toolchain.tar.xz -C /tmp
-          TOOLCHAIN_SRC=$(find /tmp -maxdepth 1 -type d -name "ios-toolchain*" | head -n 1)
-          if [ -z "$TOOLCHAIN_SRC" ]; then
-            echo "Unable to locate extracted toolchain directory" >&2
-            exit 1
-          fi
-          mkdir -p "$THEOS/toolchains"
-          rm -rf "$THEOS/toolchains/ios"
-          mv "$TOOLCHAIN_SRC" "$THEOS/toolchains/ios"
-          curl -L --fail https://github.com/theos/sdks/releases/download/16.5/iphoneos16.5.sdk.tar.xz -o /tmp/iphoneos16.5.sdk.tar.xz
-          mkdir -p "$THEOS/sdks"
-          tar -xJf /tmp/iphoneos16.5.sdk.tar.xz -C "$THEOS/sdks"
-          rm -f /tmp/ios-toolchain.tar.xz /tmp/iphoneos16.5.sdk.tar.xz
+          PACKAGE_SCHEME="${{ github.event.inputs.package_scheme || 'rootless' }}"
+          THEOS_TARGET="${{ github.event.inputs.theos_target || 'iphone:clang:latest:16.5' }}"
+          MAKE_TARGET="${{ github.event.inputs.make_target || 'package' }}"
+          {
+            echo "PACKAGE_SCHEME=$PACKAGE_SCHEME"
+            echo "THEOS_TARGET=$THEOS_TARGET"
+            echo "MAKE_TARGET=$MAKE_TARGET"
+            echo "THEOS_PACKAGE_SCHEME=$PACKAGE_SCHEME"
+            echo "TARGET=$THEOS_TARGET"
+          } >> "$GITHUB_ENV"
+          echo "Build parameters:"
+          echo "  THEOS_PACKAGE_SCHEME=$PACKAGE_SCHEME"
+          echo "  TARGET=$THEOS_TARGET"
+          echo "  MAKE_TARGET=$MAKE_TARGET"
 
-      - name: Configure toolchain path
-        run: echo "$THEOS/toolchains/ios/bin" >> $GITHUB_PATH
-
-      - name: Show build configuration
+      - name: Install dependencies
         run: |
-          echo "Configuration: ${{ matrix.configuration }}"
-          TARGET=$(awk -F ':=' '/^TARGET/ {gsub(/[[:space:]]+/, "", $2); print $2}' Makefile)
-          echo "TARGET=${TARGET:-unknown}"
-          echo "THEOS_PACKAGE_SCHEME=$THEOS_PACKAGE_SCHEME"
+          set -euo pipefail
+          brew install ldid make dpkg gnu-sed
+          echo "$(brew --prefix make)/libexec/gnubin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix gnu-sed)/libexec/gnubin" >> "$GITHUB_PATH"
+
+      - name: Install Theos
+        run: |
+          set -euo pipefail
+          if [ ! -d "$THEOS" ]; then
+            git clone --recursive https://github.com/theos/theos.git "$THEOS"
+          else
+            git -C "$THEOS" pull --ff-only
+            git -C "$THEOS" submodule update --init --recursive
+          fi
+          echo "$THEOS/bin" >> "$GITHUB_PATH"
+
+      - name: Prepare SDK
+        run: |
+          set -euo pipefail
+          if xcrun --sdk iphoneos --show-sdk-path >/dev/null 2>&1; then
+            SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
+            echo "Using Xcode SDK at $SDK_PATH"
+            echo "SDKROOT=$SDK_PATH" >> "$GITHUB_ENV"
+          else
+            echo "Xcode SDK not available, cloning Theos SDKs"
+            mkdir -p "$THEOS"
+            rm -rf "$THEOS/sdks"
+            git clone --depth=1 https://github.com/theos/sdks.git "$THEOS/sdks"
+            SDK_PATH="$THEOS/sdks/iPhoneOS16.5.sdk"
+            if [ ! -d "$SDK_PATH" ]; then
+              echo "Expected SDK not found at $SDK_PATH" >&2
+              ls -1 "$THEOS/sdks"
+              exit 1
+            fi
+            echo "SDKROOT=$SDK_PATH" >> "$GITHUB_ENV"
+          fi
+
+      - name: Display build environment
+        run: |
+          set -euo pipefail
+          echo "THEOS=${THEOS}"
+          echo "THEOS_PACKAGE_SCHEME=${THEOS_PACKAGE_SCHEME}"
+          echo "TARGET=${TARGET}"
+          echo "MAKE_TARGET=${MAKE_TARGET}"
+          echo "SDKROOT=${SDKROOT:-not set}"
 
       - name: Build package
         run: |
           set -euo pipefail
           make clean
-          make package
+          make "${MAKE_TARGET}" THEOS_PACKAGE_SCHEME="${THEOS_PACKAGE_SCHEME}" TARGET="${TARGET}"
 
       - name: Capture package metadata
         id: package-meta
@@ -83,13 +124,37 @@ jobs:
           set -euo pipefail
           VERSION=$(awk '/^Version:/ {print $2}' control)
           PACKAGE=$(awk '/^Package:/ {print $2}' control)
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "package=$PACKAGE" >> $GITHUB_OUTPUT
+          ARTIFACT_NAME="${PACKAGE}-${VERSION}-${THEOS_PACKAGE_SCHEME}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "package=$PACKAGE" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=$ARTIFACT_NAME" >> "$GITHUB_OUTPUT"
+          echo "Built packages:"
           ls -1 packages
 
       - name: Upload .deb artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.package-meta.outputs.package }}-${{ steps.package-meta.outputs.version }}-${{ matrix.configuration }}
+          name: ${{ steps.package-meta.outputs.artifact_name }}
           path: packages/*.deb
           if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact_name }}
+          path: release
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: WeChatKeyboardSwitch ${{ needs.build.outputs.version }}
+          files: release/*.deb
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
