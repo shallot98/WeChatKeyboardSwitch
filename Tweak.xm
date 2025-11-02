@@ -132,6 +132,7 @@ static dispatch_source_t gSwitchWatchdogTimer = nil;
 @end
 
 static BOOL WKSIsHardwareKeyboardConnected(void);
+static BOOL WKSResponderMatchesIdentifierSet(UIResponder *responder, NSSet<NSString *> *set);
 static BOOL WKSViewIsEligibleKeyboardView(UIView *keyboardView);
 static void WKSAttachGesturesToKeyboardView(UIView *keyboardView);
 static void WKSDetachGesturesFromKeyboardView(UIView *keyboardView);
@@ -613,6 +614,18 @@ static BOOL WKSResponderIsSearchField(UIResponder *responder) {
         if (blacklist.count > 0 && [blacklist containsObject:lowerClassName]) {
             return YES;
         }
+    }
+    return NO;
+}
+
+static BOOL WKSResponderMatchesIdentifierSet(UIResponder *responder, NSSet<NSString *> *set) {
+    if (!responder || set.count == 0) {
+        return NO;
+    }
+    NSString *className = NSStringFromClass([responder class]);
+    NSString *lowerClassName = WKSNormalizeClassName(className);
+    if (lowerClassName.length > 0 && [set containsObject:lowerClassName]) {
+        return YES;
     }
     return NO;
 }
