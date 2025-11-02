@@ -587,22 +587,6 @@ static BOOL WKSIsRunningInWeChat(void) {
     return isWeChat;
 }
 
-static BOOL WKSStringContainsTokenSet(NSString *string, NSSet<NSString *> *tokens) {
-    if (string.length == 0 || tokens.count == 0) {
-        return NO;
-    }
-    NSString *normalized = [[string lowercaseString] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-    if (normalized.length == 0) {
-        return NO;
-    }
-    for (NSString *token in tokens) {
-        if (token.length > 0 && [normalized containsString:token]) {
-            return YES;
-        }
-    }
-    return NO;
-}
-
 static BOOL WKSResponderIsSearchField(UIResponder *responder) {
     if (!responder) {
         return NO;
