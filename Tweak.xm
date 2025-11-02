@@ -10,13 +10,20 @@
 #import <dispatch/dispatch.h>
 #import <objc/message.h>
 #import <objc/runtime.h>
+#import <AudioToolbox/AudioToolbox.h>
 
 #ifndef WKS_DEBUG
 #define WKS_DEBUG 0
 #endif
 
+static BOOL kRuntimeDebugEnabled = NO;
+
 #if WKS_DEBUG
-#define WKSLog(fmt, ...) NSLog(@"[WeChatKeyboardSwitch] " fmt, ##__VA_ARGS__)
+#define WKSLog(fmt, ...) do { \
+    if (kRuntimeDebugEnabled) { \
+        NSLog(@"[WeChatKeyboardSwitch] " fmt, ##__VA_ARGS__); \
+    } \
+} while(0)
 #else
 #define WKSLog(fmt, ...) ((void)0)
 #endif
@@ -67,13 +74,24 @@ static id WKSPerformOnMainThreadReturningId(id (^block)(void)) {
 static NSString * const kWeChatBundleIdentifier = @"com.tencent.xin";
 static NSString * const kPreferencesDomain = @"com.wechat.keyboardswitch";
 static NSString * const kPrefsChangedNotification = @"com.wechat.keyboardswitch.prefschanged";
-static const CFTimeInterval kGestureDebounceInterval = 0.35;
 static const CGFloat kBottomExclusionHeight = 54.0;
+static const SystemSoundID kWKSGestureSoundID = 1104;
 
 static BOOL kPrefEnabled = YES;
 static BOOL kPrefOnlyWeChat = YES;
 static BOOL kPrefInvertDirection = NO;
 static BOOL kPrefHapticFeedback = YES;
+static UIImpactFeedbackStyle kPrefHapticStrength = UIImpactFeedbackStyleLight;
+static BOOL kPrefSoundEnabled = NO;
+static CGFloat kPrefSwipeThreshold = 42.0f;
+static CFTimeInterval kPrefGestureDebounce = 0.35;
+static BOOL kPrefDisableInSearchFields = YES;
+static NSString *kPrefChineseMode = nil;
+static NSString *kPrefEnglishMode = nil;
+static NSSet<NSString *> *kPrefContextBlacklist = nil;
+static NSSet<NSString *> *kPrefContextWhitelist = nil;
+static BOOL kPrefDebugLogging = NO;
+static __weak UIResponder *WKSWeakFirstResponder = nil;
 
 @interface UIKeyboardLayout : UIView
 @end
@@ -107,11 +125,31 @@ static BOOL kPrefHapticFeedback = YES;
 - (NSString *)identifier;
 @end
 
+@interface UIResponder (WKSPrivate)
+- (id)_responderForEditing;
+@end
+
+@interface UITextField : UIControl <UITextInput>
+@end
+
+@interface UITextView : UIScrollView <UITextInput>
+@end
+
+@interface UISearchBar : UIView
+@end
+
 static id WKSCallSelectorReturningId(id target, SEL selector) {
     if (!target || !selector || ![target respondsToSelector:selector]) {
         return nil;
     }
     return ((id (*)(id, SEL))objc_msgSend)(target, selector);
+}
+
+static BOOL WKSCallSelectorReturningBOOL(id target, SEL selector) {
+    if (!target || !selector || ![target respondsToSelector:selector]) {
+        return NO;
+    }
+    return ((BOOL (*)(id, SEL))objc_msgSend)(target, selector);
 }
 
 static void WKSCallSelector(id target, SEL selector) {
@@ -233,15 +271,232 @@ static BOOL WKSGetBoolPreference(CFStringRef key, BOOL defaultValue) {
     return result;
 }
 
+static NSInteger WKSGetIntegerPreference(CFStringRef key, NSInteger defaultValue) {
+    CFPropertyListRef value = CFPreferencesCopyAppValue(key, (__bridge CFStringRef)kPreferencesDomain);
+    NSInteger result = defaultValue;
+    if (value) {
+        if (CFGetTypeID(value) == CFNumberGetTypeID()) {
+            CFNumberGetValue((CFNumberRef)value, kCFNumberNSIntegerType, &result);
+        } else if (CFGetTypeID(value) == CFBooleanGetTypeID()) {
+            result = CFBooleanGetValue((CFBooleanRef)value) ? 1 : 0;
+        }
+        CFRelease(value);
+    }
+    return result;
+}
+
+static CGFloat WKSGetFloatPreference(CFStringRef key, CGFloat defaultValue) {
+    CFPropertyListRef value = CFPreferencesCopyAppValue(key, (__bridge CFStringRef)kPreferencesDomain);
+    CGFloat result = defaultValue;
+    if (value) {
+        if (CFGetTypeID(value) == CFNumberGetTypeID()) {
+            double doubleValue = 0.0;
+            CFNumberGetValue((CFNumberRef)value, kCFNumberDoubleType, &doubleValue);
+            result = (CGFloat)doubleValue;
+        }
+        CFRelease(value);
+    }
+    return result;
+}
+
+static NSString *WKSGetStringPreference(CFStringRef key, NSString *defaultValue) {
+    CFPropertyListRef value = CFPreferencesCopyAppValue(key, (__bridge CFStringRef)kPreferencesDomain);
+    NSString *result = defaultValue;
+    if (value) {
+        if (CFGetTypeID(value) == CFStringGetTypeID()) {
+            result = (__bridge_transfer NSString *)value;
+            return result;
+        }
+        CFRelease(value);
+    }
+    return result;
+}
+
+static NSArray *WKSGetArrayPreference(CFStringRef key) {
+    CFPropertyListRef value = CFPreferencesCopyAppValue(key, (__bridge CFStringRef)kPreferencesDomain);
+    NSArray *result = nil;
+    if (value) {
+        if (CFGetTypeID(value) == CFArrayGetTypeID()) {
+            result = (__bridge_transfer NSArray *)value;
+            return result;
+        }
+        CFRelease(value);
+    }
+    return result;
+}
+
+static NSString *WKSNormalizePreferenceString(NSString *string) {
+    if (![string isKindOfClass:[NSString class]]) {
+        return nil;
+    }
+    NSString *trimmed = [string stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (trimmed.length == 0) {
+        return nil;
+    }
+    return trimmed;
+}
+
+static NSString *WKSNormalizeClassName(NSString *className) {
+    NSString *normalized = WKSNormalizePreferenceString(className);
+    if (normalized.length == 0) {
+        return nil;
+    }
+    return [normalized lowercaseString];
+}
+
+static NSSet<NSString *> *WKSNormalizedClassSetFromValue(id value) {
+    if (!value) {
+        return nil;
+    }
+    NSMutableSet<NSString *> *collected = [NSMutableSet set];
+    void (^addString)(NSString *) = ^(NSString *candidate) {
+        NSString *normalized = WKSNormalizeClassName(candidate);
+        if (normalized.length > 0) {
+            [collected addObject:normalized];
+        }
+    };
+    if ([value isKindOfClass:[NSArray class]] || [value isKindOfClass:[NSSet class]]) {
+        for (id element in value) {
+            if ([element isKindOfClass:[NSString class]]) {
+                addString(element);
+            }
+        }
+    } else if ([value isKindOfClass:[NSString class]]) {
+        NSCharacterSet *delimiters = [NSCharacterSet characterSetWithCharactersInString:@",\n" ];
+        NSArray<NSString *> *pieces = [value componentsSeparatedByCharactersInSet:delimiters];
+        for (NSString *piece in pieces) {
+            addString(piece);
+        }
+    }
+    if (collected.count == 0) {
+        return nil;
+    }
+    return [collected copy];
+}
+
+static NSSet<NSString *> *WKSDefaultSearchBlacklist(void) {
+    static NSSet<NSString *> *defaultSet = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        defaultSet = [NSSet setWithObjects:@"uisearchbartextfield", @"uisearchtextfield", nil];
+    });
+    return defaultSet;
+}
+
+static UIImpactFeedbackStyle WKSHapticStyleFromValue(id value, UIImpactFeedbackStyle fallback) {
+    if (!value) {
+        return fallback;
+    }
+    if ([value isKindOfClass:[NSNumber class]]) {
+        NSInteger integerValue = [value integerValue];
+        switch (integerValue) {
+            case 0: return UIImpactFeedbackStyleLight;
+            case 1: return UIImpactFeedbackStyleMedium;
+            case 2: return UIImpactFeedbackStyleHeavy;
+            case 3:
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 130000
+                return UIImpactFeedbackStyleSoft;
+#else
+                return UIImpactFeedbackStyleLight;
+#endif
+            case 4:
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 130000
+                return UIImpactFeedbackStyleRigid;
+#else
+                return UIImpactFeedbackStyleHeavy;
+#endif
+            default:
+                break;
+        }
+    }
+    if ([value isKindOfClass:[NSString class]]) {
+        NSString *normalized = [[value lowercaseString] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        if ([normalized isEqualToString:@"light"]) {
+            return UIImpactFeedbackStyleLight;
+        }
+        if ([normalized isEqualToString:@"medium"]) {
+            return UIImpactFeedbackStyleMedium;
+        }
+        if ([normalized isEqualToString:@"heavy"]) {
+            return UIImpactFeedbackStyleHeavy;
+        }
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 130000
+        if ([normalized isEqualToString:@"soft"]) {
+            return UIImpactFeedbackStyleSoft;
+        }
+        if ([normalized isEqualToString:@"rigid"]) {
+            return UIImpactFeedbackStyleRigid;
+        }
+#endif
+    }
+    return fallback;
+}
+
+static NSString *WKSNormalizeInputModeIdentifier(NSString *identifier) {
+    NSString *normalized = WKSNormalizePreferenceString(identifier);
+    return normalized ?: nil;
+}
+
 static void WKSLoadPreferences(void) {
     CFPreferencesAppSynchronize((__bridge CFStringRef)kPreferencesDomain);
     kPrefEnabled = WKSGetBoolPreference(CFSTR("Enabled"), YES);
     kPrefOnlyWeChat = WKSGetBoolPreference(CFSTR("OnlyWeChat"), YES);
     kPrefInvertDirection = WKSGetBoolPreference(CFSTR("InvertDirection"), NO);
     kPrefHapticFeedback = WKSGetBoolPreference(CFSTR("HapticFeedback"), YES);
+    kPrefSoundEnabled = WKSGetBoolPreference(CFSTR("SoundEnabled"), NO);
+    kPrefDisableInSearchFields = WKSGetBoolPreference(CFSTR("DisableInSearchFields"), YES);
+    kPrefDebugLogging = WKSGetBoolPreference(CFSTR("DebugLogging"), NO);
+
+    CFPropertyListRef hapticRaw = CFPreferencesCopyAppValue(CFSTR("HapticStrength"), (__bridge CFStringRef)kPreferencesDomain);
+    if (hapticRaw) {
+        kPrefHapticStrength = WKSHapticStyleFromValue((__bridge id)hapticRaw, UIImpactFeedbackStyleLight);
+        CFRelease(hapticRaw);
+    } else {
+        kPrefHapticStrength = UIImpactFeedbackStyleLight;
+    }
+
+    CGFloat thresholdValue = WKSGetFloatPreference(CFSTR("SwipeThreshold"), 42.0);
+    kPrefSwipeThreshold = MAX(15.0, MIN(120.0, thresholdValue));
+
+    CGFloat debounceValue = WKSGetFloatPreference(CFSTR("GestureDebounce"), 0.35);
+    kPrefGestureDebounce = MAX(0.12, MIN(1.5, debounceValue));
+
+    NSString *rawChinese = WKSGetStringPreference(CFSTR("ChineseMode"), nil);
+    NSString *rawEnglish = WKSGetStringPreference(CFSTR("EnglishMode"), nil);
+    kPrefChineseMode = WKSNormalizeInputModeIdentifier(rawChinese);
+    kPrefEnglishMode = WKSNormalizeInputModeIdentifier(rawEnglish);
+
+    CFPropertyListRef blacklistRaw = CFPreferencesCopyAppValue(CFSTR("ContextBlacklist"), (__bridge CFStringRef)kPreferencesDomain);
+    if (blacklistRaw) {
+        kPrefContextBlacklist = WKSNormalizedClassSetFromValue((__bridge id)blacklistRaw);
+        CFRelease(blacklistRaw);
+    } else {
+        kPrefContextBlacklist = nil;
+    }
+
+    CFPropertyListRef whitelistRaw = CFPreferencesCopyAppValue(CFSTR("ContextWhitelist"), (__bridge CFStringRef)kPreferencesDomain);
+    if (whitelistRaw) {
+        kPrefContextWhitelist = WKSNormalizedClassSetFromValue((__bridge id)whitelistRaw);
+        CFRelease(whitelistRaw);
+    } else {
+        kPrefContextWhitelist = nil;
+    }
+
+    if (kPrefDisableInSearchFields) {
+        NSMutableSet<NSString *> *combined = [NSMutableSet setWithSet:WKSDefaultSearchBlacklist()];
+        if (kPrefContextBlacklist.count > 0) {
+            [combined unionSet:kPrefContextBlacklist];
+        }
+        kPrefContextBlacklist = [combined copy];
+    }
+
+    kRuntimeDebugEnabled = kPrefDebugLogging;
+#if !WKS_DEBUG
+    kRuntimeDebugEnabled = NO;
+#endif
+
 #if WKS_DEBUG
-    WKSLog(@"Preferences loaded - Enabled: %d, OnlyWeChat: %d, InvertDirection: %d, HapticFeedback: %d",
-           kPrefEnabled, kPrefOnlyWeChat, kPrefInvertDirection, kPrefHapticFeedback);
+    WKSLog(@"Preferences loaded - Enabled: %d, DebugLogging: %d", kPrefEnabled, kPrefDebugLogging);
 #endif
 }
 
@@ -276,40 +531,285 @@ static BOOL WKSIsWeChatProcess(void) {
     return isWeChat;
 }
 
-static BOOL WKSShouldActivate(void) {
+static BOOL WKSResponderMatchesSet(UIResponder *responder, NSSet<NSString *> *set) {
+    if (!responder || set.count == 0) {
+        return NO;
+    }
+    NSMutableSet<UIResponder *> *visited = [NSMutableSet set];
+    UIResponder *current = responder;
+    NSUInteger depth = 0;
+    while (current && depth < 10) {
+        if ([visited containsObject:current]) {
+            break;
+        }
+        [visited addObject:current];
+        NSString *normalized = WKSNormalizeClassName(NSStringFromClass([current class]));
+        if (normalized.length > 0 && [set containsObject:normalized]) {
+            return YES;
+        }
+        UIResponder *nextResponder = current.nextResponder;
+        if ([current isKindOfClass:[UIView class]]) {
+            UIView *view = (UIView *)current;
+            if (view.superview) {
+                nextResponder = view.superview;
+            } else if (!nextResponder) {
+                nextResponder = view.nextResponder;
+            }
+        }
+        current = nextResponder;
+        depth++;
+    }
+    return NO;
+}
+
+static BOOL WKSResponderLooksLikeSearch(UIResponder *responder) {
+    if (!responder) {
+        return NO;
+    }
+    static Class searchBarFieldClass = Nil;
+    static Class searchTextFieldClass = Nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        searchBarFieldClass = NSClassFromString(@"UISearchBarTextField");
+        searchTextFieldClass = NSClassFromString(@"UISearchTextField");
+    });
+    if ((searchBarFieldClass && [responder isKindOfClass:searchBarFieldClass]) ||
+        (searchTextFieldClass && [responder isKindOfClass:searchTextFieldClass])) {
+        return YES;
+    }
+    NSString *className = [NSStringFromClass([responder class]) lowercaseString];
+    if ([className containsString:@"search"]) {
+        return YES;
+    }
+    SEL textContentTypeSel = @selector(textContentType);
+    if ([responder respondsToSelector:textContentTypeSel]) {
+        id contentType = WKSCallSelectorReturningId(responder, textContentTypeSel);
+        if ([contentType isKindOfClass:[NSString class]] &&
+            [[(NSString *)contentType lowercaseString] containsString:@"search"]) {
+            return YES;
+        }
+    }
+    SEL placeholderSel = @selector(placeholder);
+    if ([responder respondsToSelector:placeholderSel]) {
+        id placeholder = WKSCallSelectorReturningId(responder, placeholderSel);
+        if ([placeholder isKindOfClass:[NSString class]] &&
+            [[(NSString *)placeholder lowercaseString] containsString:@"search"]) {
+            return YES;
+        }
+    }
+    if ([responder isKindOfClass:[UIView class]]) {
+        UIView *view = (UIView *)responder;
+        UIView *current = view.superview;
+        NSUInteger depth = 0;
+        while (current && depth < 5) {
+            NSString *name = [NSStringFromClass([current class]) lowercaseString];
+            if ([name containsString:@"search"]) {
+                return YES;
+            }
+            current = current.superview;
+            depth++;
+        }
+    }
+    return NO;
+}
+
+static UIResponder *WKSCurrentFirstResponder(void) {
+    return WKSPerformOnMainThreadReturningId(^id{
+        WKSWeakFirstResponder = nil;
+        Class appClass = NSClassFromString(@"UIApplication");
+        SEL sharedSel = @selector(sharedApplication);
+        UIApplication *application = nil;
+        if (appClass && [appClass respondsToSelector:sharedSel]) {
+            application = WKSCallSelectorReturningId(appClass, sharedSel);
+        }
+        if (application) {
+            [application sendAction:@selector(wks_captureFirstResponder:) to:nil from:nil forEvent:nil];
+        }
+        if (WKSWeakFirstResponder) {
+            return WKSWeakFirstResponder;
+        }
+        UIKeyboardImpl *impl = [UIKeyboardImpl activeInstance];
+        if (!impl) {
+            impl = [UIKeyboardImpl sharedInstance];
+        }
+        SEL delegateSel = @selector(delegate);
+        if (impl && [impl respondsToSelector:delegateSel]) {
+            id delegate = WKSCallSelectorReturningId(impl, delegateSel);
+            if (delegate) {
+                return delegate;
+            }
+        }
+        SEL responderSel = NSSelectorFromString(@"responder");
+        if (impl && [impl respondsToSelector:responderSel]) {
+            id delegate = WKSCallSelectorReturningId(impl, responderSel);
+            if (delegate) {
+                return delegate;
+            }
+        }
+        SEL privateDelegateSel = NSSelectorFromString(@"_delegate");
+        if (impl && [impl respondsToSelector:privateDelegateSel]) {
+            id delegate = WKSCallSelectorReturningId(impl, privateDelegateSel);
+            if (delegate) {
+                return delegate;
+            }
+        }
+        return nil;
+    });
+}
+
+static BOOL WKSIsHardwareKeyboardConnected(void) {
+    static CFTimeInterval lastCheck = 0;
+    static BOOL cachedResult = NO;
+    CFTimeInterval now = CACurrentMediaTime();
+    if ((now - lastCheck) < 0.5) {
+        return cachedResult;
+    }
+    lastCheck = now;
+    cachedResult = WKSPerformOnMainThreadReturningBOOL(^BOOL{
+        UIKeyboardImpl *impl = [UIKeyboardImpl activeInstance];
+        if (!impl) {
+            impl = [UIKeyboardImpl sharedInstance];
+        }
+        if (!impl) {
+            return NO;
+        }
+        NSArray<NSString *> *selectors = @[ @"isHardwareKeyboardAttached",
+                                            @"hardwareKeyboardAttached",
+                                            @"_isHardwareKeyboardAttached",
+                                            @"isInHardwareKeyboardMode",
+                                            @"inHardwareKeyboardMode",
+                                            @"isHardwareKeyboardActive" ];
+        for (NSString *name in selectors) {
+            SEL sel = NSSelectorFromString(name);
+            if (sel && [impl respondsToSelector:sel]) {
+                if (((BOOL (*)(id, SEL))objc_msgSend)(impl, sel)) {
+                    return YES;
+                }
+            }
+        }
+        SEL configurationSel = NSSelectorFromString(@"hardwareKeyboardConfiguration");
+        if (configurationSel && [impl respondsToSelector:configurationSel]) {
+            id configuration = WKSCallSelectorReturningId(impl, configurationSel);
+            if (configuration) {
+                SEL countSel = @selector(count);
+                if ([configuration respondsToSelector:countSel]) {
+                    NSInteger count = ((NSInteger (*)(id, SEL))objc_msgSend)(configuration, countSel);
+                    if (count > 0) {
+                        return YES;
+                    }
+                } else {
+                    return YES;
+                }
+            }
+        }
+        return NO;
+    });
+    return cachedResult;
+}
+
+static BOOL WKSIsResponderAllowed(UIResponder *responder) {
+    if (!responder) {
+        return YES;
+    }
+    BOOL isWhitelisted = NO;
+    if (kPrefContextWhitelist.count > 0) {
+        isWhitelisted = WKSResponderMatchesSet(responder, kPrefContextWhitelist);
+        if (!isWhitelisted) {
+            return NO;
+        }
+    }
+    if (!isWhitelisted && kPrefContextBlacklist.count > 0 && WKSResponderMatchesSet(responder, kPrefContextBlacklist)) {
+        return NO;
+    }
+    if (!isWhitelisted && kPrefDisableInSearchFields && WKSResponderLooksLikeSearch(responder)) {
+        return NO;
+    }
+    return YES;
+}
+
+static BOOL WKSShouldActivateForResponder(UIResponder *responder) {
     if (!kPrefEnabled) {
         return NO;
     }
-    if (kPrefOnlyWeChat) {
-        return WKSIsWeChatProcess();
+    if (kPrefOnlyWeChat && !WKSIsWeChatProcess()) {
+        return NO;
+    }
+    if (WKSIsHardwareKeyboardConnected()) {
+        return NO;
+    }
+    if (!WKSIsResponderAllowed(responder)) {
+        return NO;
     }
     return YES;
+}
+
+static BOOL WKSShouldActivate(void) {
+    UIResponder *responder = WKSCurrentFirstResponder();
+    return WKSShouldActivateForResponder(responder);
 }
 
 static BOOL WKSShouldProvideHapticFeedback(void) {
     return kPrefHapticFeedback;
 }
 
+static id WKSImpactGenerator(void) {
+    Class generatorClass = NSClassFromString(@"UIImpactFeedbackGenerator");
+    if (!generatorClass) {
+        return nil;
+    }
+    static id generator = nil;
+    static UIImpactFeedbackStyle cachedStyle = UIImpactFeedbackStyleLight;
+    if (!generator || cachedStyle != kPrefHapticStrength) {
+        generator = [[generatorClass alloc] initWithStyle:kPrefHapticStrength];
+        cachedStyle = kPrefHapticStrength;
+    }
+    return generator;
+}
+
 static void WKSTriggerHapticFeedback(void) {
     if (!WKSShouldProvideHapticFeedback()) {
         return;
     }
-    Class generatorClass = NSClassFromString(@"UIImpactFeedbackGenerator");
-    if (!generatorClass) {
-        return;
-    }
-    static id generator = nil;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        generator = [[generatorClass alloc] initWithStyle:UIImpactFeedbackStyleLight];
-    });
-    if ([generator respondsToSelector:@selector(impactOccurred)]) {
+    id generator = WKSImpactGenerator();
+    if (generator && [generator respondsToSelector:@selector(impactOccurred)]) {
         [generator impactOccurred];
         if ([generator respondsToSelector:@selector(prepare)]) {
             [generator prepare];
         }
     }
 }
+
+static void WKSTriggerSoundFeedback(void) {
+    if (!kPrefSoundEnabled) {
+        return;
+    }
+    AudioServicesPlaySystemSound(kWKSGestureSoundID);
+}
+
+static void WKSTriggerFeedback(void) {
+    WKSTriggerHapticFeedback();
+    WKSTriggerSoundFeedback();
+}
+
+static CFTimeInterval WKSGestureDebounceInterval(void) {
+    return MAX(0.1, kPrefGestureDebounce);
+}
+
+static CGFloat WKSGestureRequiredDistance(void) {
+    return MAX(12.0f, kPrefSwipeThreshold);
+}
+
+@interface UIResponder (WKSFirstResponderCapture)
+- (void)wks_captureFirstResponder:(id)sender;
+@end
+
+@implementation UIResponder (WKSFirstResponderCapture)
+- (void)wks_captureFirstResponder:(id)sender {
+    if ([self isKindOfClass:[UIResponder class]]) {
+        WKSWeakFirstResponder = self;
+    }
+}
+@end
 
 @interface WKSKeyboardInputHelper : NSObject
 + (instancetype)sharedHelper;
@@ -433,7 +933,51 @@ static void WKSTriggerHapticFeedback(void) {
     });
 }
 
+- (NSString *)identifierMatchingPreference:(NSString *)preference {
+    NSString *cleanPreference = WKSNormalizeInputModeIdentifier(preference);
+    if (cleanPreference.length == 0) {
+        return nil;
+    }
+    NSString *lowerPreference = [cleanPreference lowercaseString];
+    NSArray *modes = [self activeInputModes];
+    for (id mode in modes) {
+        NSString *identifier = WKSIdentifierFromMode(mode);
+        if (identifier.length > 0 && [identifier caseInsensitiveCompare:cleanPreference] == NSOrderedSame) {
+            return identifier;
+        }
+    }
+    for (id mode in modes) {
+        NSString *identifier = WKSIdentifierFromMode(mode);
+        if (identifier.length == 0) {
+            continue;
+        }
+        NSString *lowerIdentifier = [identifier lowercaseString];
+        if ([lowerIdentifier containsString:lowerPreference]) {
+            return identifier;
+        }
+        NSString *language = WKSPrimaryLanguageFromMode(mode);
+        if (language.length > 0 && [[language lowercaseString] containsString:lowerPreference]) {
+            return identifier;
+        }
+        SEL displayNameSel = NSSelectorFromString(@"displayName");
+        if (displayNameSel && [mode respondsToSelector:displayNameSel]) {
+            id displayName = WKSCallSelectorReturningId(mode, displayNameSel);
+            if ([displayName isKindOfClass:[NSString class]]) {
+                NSString *lowerDisplayName = [(NSString *)displayName lowercaseString];
+                if ([lowerDisplayName containsString:lowerPreference]) {
+                    return identifier;
+                }
+            }
+        }
+    }
+    return nil;
+}
+
 - (NSString *)preferredChineseInputModeIdentifier {
+    NSString *preferred = [self identifierMatchingPreference:kPrefChineseMode];
+    if (preferred.length > 0) {
+        return preferred;
+    }
     NSString *identifier = [self findIdentifierMatchingPredicate:^BOOL(NSString *identifier, NSString *language) {
         return WKSIdentifierMatchesChinesePinyin(identifier);
     }];
@@ -454,6 +998,10 @@ static void WKSTriggerHapticFeedback(void) {
 }
 
 - (NSString *)preferredEnglishInputModeIdentifier {
+    NSString *preferred = [self identifierMatchingPreference:kPrefEnglishMode];
+    if (preferred.length > 0) {
+        return preferred;
+    }
     return [self findIdentifierMatchingPredicate:^BOOL(NSString *identifier, NSString *language) {
         return WKSIdentifierMatchesEnglish(identifier, language);
     }];
@@ -676,6 +1224,8 @@ static void WKSTriggerHapticFeedback(void) {
     UISwipeGestureRecognizer *_swipeUp;
     UISwipeGestureRecognizer *_swipeDown;
     CFTimeInterval _lastTrigger;
+    CGPoint _initialTouchPoint;
+    BOOL _hasInitialTouchPoint;
 }
 
 - (instancetype)initWithKeyboardView:(UIView *)keyboardView {
@@ -683,6 +1233,8 @@ static void WKSTriggerHapticFeedback(void) {
     if (self) {
         _keyboardView = keyboardView;
         _lastTrigger = 0;
+        _initialTouchPoint = CGPointZero;
+        _hasInitialTouchPoint = NO;
     }
     return self;
 }
@@ -736,26 +1288,59 @@ static void WKSTriggerHapticFeedback(void) {
     _swipeUp = nil;
     _swipeDown = nil;
     _keyboardView = nil;
+    _hasInitialTouchPoint = NO;
+    _initialTouchPoint = CGPointZero;
 }
 
 - (void)handleSwipe:(UISwipeGestureRecognizer *)gesture {
     if (gesture.state != UIGestureRecognizerStateRecognized) {
         return;
     }
-    if (!WKSShouldActivate()) {
+    if (!_keyboardView) {
+        return;
+    }
+
+    UIResponder *responder = WKSCurrentFirstResponder();
+    if (!WKSShouldActivateForResponder(responder)) {
         return;
     }
 
     CFTimeInterval now = CACurrentMediaTime();
-    if (_lastTrigger > 0 && (now - _lastTrigger) < kGestureDebounceInterval) {
+    CFTimeInterval debounceInterval = WKSGestureDebounceInterval();
+    if (_lastTrigger > 0 && (now - _lastTrigger) < debounceInterval) {
 #if WKS_DEBUG
         WKSLog(@"Gesture ignored due to debounce (%.2f s)", now - _lastTrigger);
 #endif
         return;
     }
-    _lastTrigger = now;
 
-    BOOL isUpGesture = (gesture == _swipeUp) || ((gesture.direction & UISwipeGestureRecognizerDirectionUp) != 0);
+    CGPoint currentPoint = [gesture locationInView:_keyboardView];
+    if (!_hasInitialTouchPoint) {
+        _initialTouchPoint = currentPoint;
+    }
+
+    CGFloat deltaX = currentPoint.x - _initialTouchPoint.x;
+    CGFloat deltaY = currentPoint.y - _initialTouchPoint.y;
+    CGFloat distance = fabs(deltaY);
+    CGFloat requiredDistance = WKSGestureRequiredDistance();
+    if (distance < requiredDistance) {
+#if WKS_DEBUG
+        WKSLog(@"Gesture ignored due to short travel (%.1f < %.1f)", distance, requiredDistance);
+#endif
+        return;
+    }
+    if (fabs(deltaY) < fabs(deltaX)) {
+#if WKS_DEBUG
+        WKSLog(@"Gesture ignored due to horizontal bias (|%.1f| ≥ |%.1f|)", deltaX, deltaY);
+#endif
+        return;
+    }
+
+    _lastTrigger = now;
+    _hasInitialTouchPoint = NO;
+    _initialTouchPoint = CGPointZero;
+
+    BOOL isUpGesture = (gesture == _swipeUp) || ((gesture.direction & UISwipeGestureRecognizerDirectionUp) != 0) || (deltaY < 0.0f);
     BOOL targetChinese = isUpGesture ? !kPrefInvertDirection : kPrefInvertDirection;
 
     WKSPerformOnMainThread(^{
@@ -772,7 +1357,7 @@ static void WKSTriggerHapticFeedback(void) {
         }
 
         if (didSwitch) {
-            WKSTriggerHapticFeedback();
+            WKSTriggerFeedback();
         }
     });
 }
@@ -780,41 +1365,65 @@ static void WKSTriggerHapticFeedback(void) {
 #pragma mark - UIGestureRecognizerDelegate
 
 - (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)gestureRecognizer {
-    if (!WKSShouldActivate()) {
+    UIResponder *responder = WKSCurrentFirstResponder();
+    if (!WKSShouldActivateForResponder(responder)) {
         return NO;
     }
     if (!_keyboardView) {
         return NO;
     }
+    CGRect bounds = _keyboardView.bounds;
+    if (CGRectIsEmpty(bounds) || CGRectGetHeight(bounds) < 50.0f) {
+        return NO;
+    }
     if ([gestureRecognizer isKindOfClass:[UISwipeGestureRecognizer class]]) {
         CGPoint location = [gestureRecognizer locationInView:_keyboardView];
-        if (location.y > CGRectGetHeight(_keyboardView.bounds) - kBottomExclusionHeight) {
-            // Avoid conflicting with globe/dictation area
+        if (location.y > CGRectGetHeight(bounds) - kBottomExclusionHeight) {
             return NO;
         }
+        if (location.y < 10.0f || location.x < 5.0f || location.x > CGRectGetWidth(bounds) - 5.0f) {
+            return NO;
+        }
+    }
+    if (!_hasInitialTouchPoint) {
+        _initialTouchPoint = [gestureRecognizer locationInView:_keyboardView];
+        _hasInitialTouchPoint = YES;
     }
     return YES;
 }
 
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldReceiveTouch:(UITouch *)touch {
-    if (!WKSShouldActivate()) {
+    UIResponder *responder = WKSCurrentFirstResponder();
+    if (!WKSShouldActivateForResponder(responder)) {
         return NO;
     }
     if (!_keyboardView) {
         return NO;
     }
     UIView *view = touch.view;
-    while (view && view != _keyboardView) {
+    NSUInteger depth = 0;
+    while (view && view != _keyboardView && depth < 10) {
         NSString *className = NSStringFromClass([view class]);
-        if ([className containsString:@"Dock"] || [view isKindOfClass:[UIKeyboardDockView class]]) {
+        NSString *lowerClassName = [className lowercaseString];
+        if ([lowerClassName containsString:@"dock"] ||
+            [lowerClassName containsString:@"dictation"] ||
+            [lowerClassName containsString:@"globe"] ||
+            [view isKindOfClass:[UIKeyboardDockView class]]) {
             return NO;
         }
         view = view.superview;
+        depth++;
     }
     CGPoint location = [touch locationInView:_keyboardView];
-    if (location.y > CGRectGetHeight(_keyboardView.bounds) - kBottomExclusionHeight) {
+    CGRect bounds = _keyboardView.bounds;
+    if (location.y > CGRectGetHeight(bounds) - kBottomExclusionHeight) {
         return NO;
     }
+    if (location.y < 5.0f || location.x < 3.0f || location.x > CGRectGetWidth(bounds) - 3.0f) {
+        return NO;
+    }
+    _initialTouchPoint = location;
+    _hasInitialTouchPoint = YES;
     return YES;
 }
 
@@ -826,6 +1435,9 @@ static void WKSTriggerHapticFeedback(void) {
     if ([otherGestureRecognizer isKindOfClass:[UILongPressGestureRecognizer class]]) {
         return YES;
     }
+    if ([otherGestureRecognizer isKindOfClass:[UIPanGestureRecognizer class]]) {
+        return YES;
+    }
     return NO;
 }
 
@@ -833,8 +1445,37 @@ static void WKSTriggerHapticFeedback(void) {
 
 static const void *kWKSHandlerAssociationKey = &kWKSHandlerAssociationKey;
 
-static void WKSAttachGesturesToKeyboardView(UIView *keyboardView) {
+static BOOL WKSViewIsEligibleKeyboardView(UIView *keyboardView) {
     if (!keyboardView) {
+        return NO;
+    }
+    if (CGRectGetHeight(keyboardView.bounds) < 40.0f || CGRectGetWidth(keyboardView.bounds) < 80.0f) {
+        return NO;
+    }
+    UIWindow *window = keyboardView.window;
+    if (!window || window.hidden) {
+        return NO;
+    }
+    NSString *windowClassName = NSStringFromClass([window class]);
+    if ([windowClassName rangeOfString:@"Keyboard" options:NSCaseInsensitiveSearch].location == NSNotFound &&
+        [windowClassName rangeOfString:@"TextEffects" options:NSCaseInsensitiveSearch].location == NSNotFound) {
+        return NO;
+    }
+    UIView *current = keyboardView;
+    NSUInteger depth = 0;
+    while (current && depth < 8) {
+        NSString *className = NSStringFromClass([current class]);
+        if ([className rangeOfString:@"Keyboard" options:NSCaseInsensitiveSearch].location != NSNotFound) {
+            return YES;
+        }
+        current = current.superview;
+        depth++;
+    }
+    return NO;
+}
+
+static void WKSAttachGesturesToKeyboardView(UIView *keyboardView) {
+    if (!keyboardView || !WKSViewIsEligibleKeyboardView(keyboardView)) {
         return;
     }
     WKSKeyboardGestureHandler *handler = objc_getAssociatedObject(keyboardView, kWKSHandlerAssociationKey);
@@ -861,7 +1502,7 @@ static void WKSDetachGesturesFromKeyboardView(UIView *keyboardView) {
 - (void)didMoveToWindow {
     %orig;
     BOOL shouldActivate = WKSShouldActivate();
-    if (self.window && shouldActivate) {
+    if (self.window && shouldActivate && WKSViewIsEligibleKeyboardView(self)) {
         WKSAttachGesturesToKeyboardView(self);
     } else {
         WKSDetachGesturesFromKeyboardView(self);
@@ -875,7 +1516,7 @@ static void WKSDetachGesturesFromKeyboardView(UIView *keyboardView) {
 - (void)didMoveToWindow {
     %orig;
     BOOL shouldActivate = WKSShouldActivate();
-    if (self.window && shouldActivate) {
+    if (self.window && shouldActivate && WKSViewIsEligibleKeyboardView(self)) {
         WKSAttachGesturesToKeyboardView(self);
     } else {
         WKSDetachGesturesFromKeyboardView(self);
