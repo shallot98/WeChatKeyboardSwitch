@@ -631,7 +631,7 @@ static BOOL WKSShouldActivateForResponder(UIResponder *responder) {
         return NO;
     }
     if (kPrefContextBlacklist.count > 0) {
-        if (WKSResponderMatchesSet(responder, kPrefContextBlacklist)) {
+        if (WKSResponderMatchesIdentifierSet(responder, kPrefContextBlacklist)) {
 #if WKS_DEBUG
             WKSLog(@"Responder blacklisted by context");
 #endif
@@ -645,7 +645,7 @@ static BOOL WKSShouldActivateForResponder(UIResponder *responder) {
         return NO;
     }
     if (kPrefContextWhitelist.count > 0) {
-        if (!WKSResponderMatchesSet(responder, kPrefContextWhitelist)) {
+        if (!WKSResponderMatchesIdentifierSet(responder, kPrefContextWhitelist)) {
 #if WKS_DEBUG
             WKSLog(@"Responder not in whitelist");
 #endif
