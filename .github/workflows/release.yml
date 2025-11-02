@@ -4,6 +4,10 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build-and-release:
@@ -22,7 +26,7 @@ jobs:
 
       - name: Cache Theos environment
         id: cache-theos
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ${{ env.THEOS }}
           key: theos-${{ runner.os }}-release-v2-${{ hashFiles('Makefile', 'control', 'layout/**', 'Tweak.xm', 'WeChatKeyboardSwitchPrefs/**/*') }}
@@ -83,34 +87,32 @@ jobs:
           TAG_VERSION="${GITHUB_REF#refs/tags/v}"
           export TAG_VERSION
           if [ -f CHANGELOG.md ]; then
-            python3 <<'PY'
-import os
-import re
-from pathlib import Path
-
-tag = os.environ["TAG_VERSION"]
-changelog = Path("CHANGELOG.md").read_text()
-pattern = rf"## \[{re.escape(tag)}\](.*?)(?:\n## \[|$)"
-match = re.search(pattern, changelog, re.S)
-if match:
-    notes = match.group(1).strip()
-else:
-    notes = f"Release {tag}"
-if not notes:
-    notes = f"Release {tag}"
-Path("/tmp/release_notes.txt").write_text(notes)
-PY
+            python3 <<'EOF'
+          import os
+          import re
+          from pathlib import Path
+          
+          tag = os.environ["TAG_VERSION"]
+          changelog = Path("CHANGELOG.md").read_text()
+          pattern = rf"## \[{re.escape(tag)}\](.*?)(?:\n## \[|$)"
+          match = re.search(pattern, changelog, re.S)
+          if match:
+              notes = match.group(1).strip()
+          else:
+              notes = f"Release {tag}"
+          if not notes:
+              notes = f"Release {tag}"
+          Path("/tmp/release_notes.txt").write_text(notes)
+          EOF
           else
             echo "Release ${TAG_VERSION}" > /tmp/release_notes.txt
           fi
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: ${{ steps.package-meta.outputs.deb_file }}
           body_path: /tmp/release_notes.txt
           draft: false
           prerelease: false
           name: WeChatKeyboardSwitch ${{ steps.package-meta.outputs.version }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

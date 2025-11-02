@@ -4,8 +4,15 @@ on:
   push:
     branches:
       - main
+      - develop
+      - 'feature/**'
+      - 'ci/**'
     tags:
       - 'v*'
+  pull_request:
+    branches:
+      - main
+      - develop
   workflow_dispatch:
     inputs:
       package_scheme:
@@ -30,10 +37,36 @@ on:
           - all
           - debug
 
+permissions:
+  contents: read
+
 jobs:
+  smoke-test:
+    name: Smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify workflow trigger
+        run: |
+          echo "Workflow triggered successfully!"
+          echo "Event: ${{ github.event_name }}"
+          echo "Branch/Ref: ${{ github.ref }}"
+          echo "Actor: ${{ github.actor }}"
+          echo "Runner OS: ${{ runner.os }}"
+          echo "Runner arch: ${{ runner.arch }}"
+          
+      - name: Environment details
+        run: |
+          echo "=== Environment Details ==="
+          echo "GitHub Workspace: $GITHUB_WORKSPACE"
+          echo "GitHub SHA: $GITHUB_SHA"
+          echo "GitHub Repository: $GITHUB_REPOSITORY"
+          echo "GitHub Event Name: $GITHUB_EVENT_NAME"
+          uname -a
+          
   build:
     name: Build package
     runs-on: macos-13
+    needs: smoke-test
     outputs:
       package: ${{ steps.package-meta.outputs.package }}
       version: ${{ steps.package-meta.outputs.version }}
@@ -115,15 +148,15 @@ jobs:
             FALLBACK_SDK="$SDK_DIR/iPhoneOS16.5.sdk"
             if [ ! -d "$FALLBACK_SDK" ]; then
               echo "Preferred fallback SDK iPhoneOS16.5.sdk not found; selecting first available SDK"
-              FALLBACK_SDK="$(python3 - "$SDK_DIR" <<'PY'
-import glob
-import os
-import sys
-sdk_dir = sys.argv[1]
-candidates = sorted(glob.glob(os.path.join(sdk_dir, "iPhoneOS*.sdk")))
-print(candidates[-1] if candidates else "")
-PY
-)"
+              FALLBACK_SDK="$(python3 - "$SDK_DIR" <<'EOF'
+              import glob
+              import os
+              import sys
+              sdk_dir = sys.argv[1]
+              candidates = sorted(glob.glob(os.path.join(sdk_dir, "iPhoneOS*.sdk")))
+              print(candidates[-1] if candidates else "")
+              EOF
+              )"
             fi
             if [ -z "$FALLBACK_SDK" ] || [ ! -d "$FALLBACK_SDK" ]; then
               echo "No iPhoneOS SDKs available in $SDK_DIR"
@@ -185,9 +218,7 @@ PY
           name: ${{ needs.build.outputs.artifact_name }}
           path: release
       - name: Publish GitHub release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           name: WeChatKeyboardSwitch ${{ needs.build.outputs.version }}
           files: release/*.deb
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
