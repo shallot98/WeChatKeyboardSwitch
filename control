@@ -1,6 +1,6 @@
 Package: com.wechat.keyboardswitch
 Name: WeChatKeyboardSwitch
-Version: 0.1.0~rc1
+Version: 0.1.0
 Architecture: iphoneos-arm64
 Description: Keyboard switch enhancement for WeChat (iOS 13-16.5, rootless)
 Maintainer: WeChatKeyboardSwitch
