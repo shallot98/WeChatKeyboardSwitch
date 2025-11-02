@@ -108,6 +108,9 @@ static dispatch_source_t gSwitchWatchdogTimer = nil;
 @interface UIKeyboardLayout : UIView
 @end
 
+@interface UIKeyboardDockView : UIView
+@end
+
 @interface UIKeyboardLayoutStar : UIKeyboardLayout
 @end
 
@@ -1993,14 +1996,13 @@ static CGFloat WKSGestureRequiredDistance(void) {
     }
     UIView *view = touch.view;
     NSUInteger depth = 0;
-    Class dockViewClass = NSClassFromString(@"UIKeyboardDockView");
     while (view && view != _keyboardView && depth < 10) {
         NSString *className = NSStringFromClass([view class]);
         NSString *lowerClassName = [className lowercaseString];
         if ([lowerClassName containsString:@"dock"] ||
             [lowerClassName containsString:@"dictation"] ||
             [lowerClassName containsString:@"globe"] ||
-            (dockViewClass && [view isKindOfClass:dockViewClass])) {
+            [view isKindOfClass:[UIKeyboardDockView class]]) {
             return NO;
         }
         view = view.superview;
