@@ -297,6 +297,7 @@ static BOOL WKSGetBoolPreference(CFStringRef key, BOOL defaultValue) {
     return result;
 }
 
+__attribute__((unused))
 static NSInteger WKSGetIntegerPreference(CFStringRef key, NSInteger defaultValue) {
     CFPropertyListRef value = CFPreferencesCopyAppValue(key, (__bridge CFStringRef)kPreferencesDomain);
     NSInteger result = defaultValue;
@@ -338,6 +339,7 @@ static NSString *WKSGetStringPreference(CFStringRef key, NSString *defaultValue)
     return result;
 }
 
+__attribute__((unused))
 static NSArray *WKSGetArrayPreference(CFStringRef key) {
     CFPropertyListRef value = CFPreferencesCopyAppValue(key, (__bridge CFStringRef)kPreferencesDomain);
     NSArray *result = nil;
@@ -2279,6 +2281,7 @@ static void WKSScanForKeyboardViews(UIView *rootView, NSUInteger depth) {
 
 %end
 
+__attribute__((unused))
 static void WKSRunDebugSmokeTests(void) {
 #if WKS_DEBUG
     WKSLog(@"Running debug smoke tests...");
