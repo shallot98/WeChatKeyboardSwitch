@@ -85,15 +85,16 @@ jobs:
       - name: Prepare SDK
         run: |
           set -euo pipefail
-          if xcrun --sdk iphoneos --show-sdk-path >/dev/null 2>&1; then
-            SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
-            echo "Using Xcode SDK at $SDK_PATH"
-            echo "SDKROOT=$SDK_PATH" >> "$GITHUB_ENV"
+          : "${THEOS:=$HOME/theos}"
+          SDK_DIR="/Applications/Xcode_15.2.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs"
+          if [ -d "$SDK_DIR/iPhoneOS17.2.sdk" ]; then
+            echo "Using Xcode SDK at $SDK_DIR/iPhoneOS17.2.sdk"
+            echo "SDKROOT=$SDK_DIR/iPhoneOS17.2.sdk" >> "$GITHUB_ENV"
           else
-            echo "Xcode SDK not available, cloning Theos SDKs"
+            echo "Xcode SDK not found at $SDK_DIR/iPhoneOS17.2.sdk, cloning Theos SDKs"
             mkdir -p "$THEOS"
             rm -rf "$THEOS/sdks"
-            git clone --depth=1 https://github.com/theos/sdks.git "$THEOS/sdks"
+            git clone --depth=1 https://github.com/theos/sdks "$THEOS/sdks"
             SDK_PATH="$THEOS/sdks/iPhoneOS16.5.sdk"
             if [ ! -d "$SDK_PATH" ]; then
               echo "Expected SDK not found at $SDK_PATH" >&2
