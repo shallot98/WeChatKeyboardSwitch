@@ -85,21 +85,54 @@ jobs:
       - name: Prepare Theos SDK
         run: |
           set -euo pipefail
-          SDK_DIR="$HOME/theos/sdks"
-          if [ -d "$SDK_DIR/.git" ]; then
-            echo "SDK dir is a git repo; fast-forward updating"
-            git -C "$SDK_DIR" fetch --depth=1 origin
-            git -C "$SDK_DIR" reset --hard FETCH_HEAD
-          elif [ -d "$SDK_DIR" ]; then
-            echo "SDK dir exists without .git; removing and re-cloning"
-            rm -rf "$SDK_DIR"
-            git clone --depth=1 https://github.com/theos/sdks "$SDK_DIR"
-          else
-            echo "SDK dir missing; cloning"
-            git clone --depth=1 https://github.com/theos/sdks "$SDK_DIR"
+          XCODE_SDK=""
+          if command -v xcrun >/dev/null 2>&1; then
+            XCODE_SDK="$(xcrun --sdk iphoneos --show-sdk-path 2>/dev/null || true)"
           fi
-          echo "SDKROOT=$SDK_DIR/iPhoneOS16.5.sdk" >> "$GITHUB_ENV"
-          echo "THEOS_PLATFORM_SDK_ROOT=" >> "$GITHUB_ENV"
+          if [ -n "$XCODE_SDK" ] && [ -d "$XCODE_SDK" ]; then
+            echo "Using Xcode iPhoneOS SDK at $XCODE_SDK"
+            echo "SDKROOT=$XCODE_SDK" >> "$GITHUB_ENV"
+            DEVELOPER_DIR="$(xcode-select -p 2>/dev/null || true)"
+            if [ -n "$DEVELOPER_DIR" ] && [ -d "$DEVELOPER_DIR/Platforms/iPhoneOS.platform" ]; then
+              echo "THEOS_PLATFORM_SDK_ROOT=$DEVELOPER_DIR/Platforms/iPhoneOS.platform" >> "$GITHUB_ENV"
+            else
+              echo "THEOS_PLATFORM_SDK_ROOT=" >> "$GITHUB_ENV"
+            fi
+          else
+            SDK_DIR="$HOME/theos/sdks"
+            if [ -d "$SDK_DIR/.git" ]; then
+              echo "SDK dir is a git repo; fast-forward updating"
+              git -C "$SDK_DIR" fetch --depth=1 origin
+              git -C "$SDK_DIR" reset --hard FETCH_HEAD
+            elif [ -d "$SDK_DIR" ]; then
+              echo "SDK dir exists without .git; removing and re-cloning"
+              rm -rf "$SDK_DIR"
+              git clone --depth=1 https://github.com/theos/sdks "$SDK_DIR"
+            else
+              echo "SDK dir missing; cloning"
+              git clone --depth=1 https://github.com/theos/sdks "$SDK_DIR"
+            fi
+            FALLBACK_SDK="$SDK_DIR/iPhoneOS16.5.sdk"
+            if [ ! -d "$FALLBACK_SDK" ]; then
+              echo "Preferred fallback SDK iPhoneOS16.5.sdk not found; selecting first available SDK"
+              FALLBACK_SDK="$(python3 - "$SDK_DIR" <<'PY'
+import glob
+import os
+import sys
+sdk_dir = sys.argv[1]
+candidates = sorted(glob.glob(os.path.join(sdk_dir, "iPhoneOS*.sdk")))
+print(candidates[-1] if candidates else "")
+PY
+)"
+            fi
+            if [ -z "$FALLBACK_SDK" ] || [ ! -d "$FALLBACK_SDK" ]; then
+              echo "No iPhoneOS SDKs available in $SDK_DIR"
+              exit 1
+            fi
+            echo "Using Theos SDK at $FALLBACK_SDK"
+            echo "SDKROOT=$FALLBACK_SDK" >> "$GITHUB_ENV"
+            echo "THEOS_PLATFORM_SDK_ROOT=" >> "$GITHUB_ENV"
+          fi
 
       - name: Display build environment
         run: |
