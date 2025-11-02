@@ -69,12 +69,6 @@ jobs:
           echo "$(brew --prefix make)/libexec/gnubin" >> "$GITHUB_PATH"
           echo "$(brew --prefix gnu-sed)/libexec/gnubin" >> "$GITHUB_PATH"
 
-      - name: Install and configure dpkg
-        run: |
-          brew update
-          brew install dpkg
-          sudo dpkg --configure -a
-
       - name: Install Theos
         run: |
           set -euo pipefail
