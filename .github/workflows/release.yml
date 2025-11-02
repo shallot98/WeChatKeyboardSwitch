@@ -25,10 +25,10 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ${{ env.THEOS }}
-          key: theos-${{ runner.os }}-release-${{ hashFiles('Makefile', 'control', 'layout/**', 'Tweak.xm', 'WeChatKeyboardSwitchPrefs/**/*') }}
+          key: theos-${{ runner.os }}-release-v2-${{ hashFiles('Makefile', 'control', 'layout/**', 'Tweak.xm', 'WeChatKeyboardSwitchPrefs/**/*') }}
           restore-keys: |
+            theos-${{ runner.os }}-release-v2-
             theos-${{ runner.os }}-release-
-            theos-${{ runner.os }}-
 
       - name: Install build dependencies
         run: |
