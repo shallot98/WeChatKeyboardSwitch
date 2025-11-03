@@ -65,7 +65,7 @@ jobs:
           
   build:
     name: Build package
-    runs-on: macos-13
+    runs-on: macos-14
     needs: smoke-test
     outputs:
       package: ${{ steps.package-meta.outputs.package }}
@@ -77,108 +77,73 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Configure build parameters
+      - name: Select Xcode and display SDK info
         run: |
           set -euo pipefail
-          PACKAGE_SCHEME="${{ github.event.inputs.package_scheme || 'rootless' }}"
-          THEOS_TARGET="${{ github.event.inputs.theos_target || 'iphone:clang:latest:16.5' }}"
-          MAKE_TARGET="${{ github.event.inputs.make_target || 'package' }}"
-          {
-            echo "PACKAGE_SCHEME=$PACKAGE_SCHEME"
-            echo "THEOS_TARGET=$THEOS_TARGET"
-            echo "MAKE_TARGET=$MAKE_TARGET"
-            echo "THEOS_PACKAGE_SCHEME=$PACKAGE_SCHEME"
-            echo "TARGET=$THEOS_TARGET"
-          } >> "$GITHUB_ENV"
-          echo "Build parameters:"
-          echo "  THEOS_PACKAGE_SCHEME=$PACKAGE_SCHEME"
-          echo "  TARGET=$THEOS_TARGET"
-          echo "  MAKE_TARGET=$MAKE_TARGET"
+          
+          # Dynamic Xcode selection: prefer /Applications/Xcode.app, fallback to highest version
+          if [ -d "/Applications/Xcode.app" ]; then
+            XCODE_PATH="/Applications/Xcode.app"
+            echo "Using default Xcode at /Applications/Xcode.app"
+          else
+            echo "Default Xcode not found, selecting highest version..."
+            XCODE_PATH=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -n 1)
+            if [ -z "$XCODE_PATH" ]; then
+              echo "ERROR: No Xcode installation found"
+              exit 1
+            fi
+            echo "Using Xcode at $XCODE_PATH"
+          fi
+          
+          sudo xcode-select -s "$XCODE_PATH"
+          
+          # Display SDK information for diagnostics
+          echo "=== Xcode and SDK Information ==="
+          xcodebuild -version
+          echo ""
+          echo "Selected Xcode path:"
+          xcode-select -p
+          echo ""
+          echo "Available SDKs:"
+          xcodebuild -showsdks
+          echo ""
+          echo "iPhone SDK path (via xcrun):"
+          xcrun --sdk iphoneos --show-sdk-path
+          echo ""
+          echo "iPhone SDK version (via xcrun):"
+          xcrun --sdk iphoneos --show-sdk-version
 
       - name: Install dependencies
         run: |
           set -euo pipefail
-          brew install ldid make dpkg gnu-sed
-          echo "$(brew --prefix make)/libexec/gnubin" >> "$GITHUB_PATH"
+          brew update
+          brew install ldid dpkg gnu-sed
           echo "$(brew --prefix gnu-sed)/libexec/gnubin" >> "$GITHUB_PATH"
 
       - name: Install Theos
         run: |
           set -euo pipefail
           THEOS_PATH="$HOME/theos"
-          if [ ! -d "$THEOS_PATH" ]; then
-            git clone --recursive https://github.com/theos/theos.git "$THEOS_PATH"
-          else
-            git -C "$THEOS_PATH" pull --ff-only
-            git -C "$THEOS_PATH" submodule update --init --recursive
-          fi
+          git clone --recursive https://github.com/theos/theos.git "$THEOS_PATH"
           echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
-          echo "$THEOS_PATH/bin" >> "$GITHUB_PATH"
-
-      - name: Prepare Theos SDK (fallback only)
-        run: |
-          set -euo pipefail
-          echo "Letting theos auto-detect SDKs..."
-          # Only prepare fallback SDK if theos cannot find one
-          SDK_DIR="$HOME/theos/sdks"
-          if [ ! -d "$SDK_DIR" ]; then
-            echo "Preparing fallback SDK directory..."
-            git clone --depth=1 https://github.com/theos/sdks "$SDK_DIR"
-          elif [ -d "$SDK_DIR/.git" ]; then
-            echo "Updating fallback SDK directory..."
-            git -C "$SDK_DIR" fetch --depth=1 origin
-            git -C "$SDK_DIR" reset --hard FETCH_HEAD
-          fi
+          echo "$HOME/theos/bin" >> "$GITHUB_PATH"
 
       - name: Display build environment
         run: |
           set -euo pipefail
-          echo "THEOS=${THEOS}"
-          echo "THEOS_PACKAGE_SCHEME=${THEOS_PACKAGE_SCHEME}"
-          echo "TARGET=${TARGET}"
-          echo "MAKE_TARGET=${MAKE_TARGET}"
-          echo "SDK detection: Letting theos auto-detect"
+          echo "=== Build Environment ==="
+          echo "THEOS: $HOME/theos"
+          echo "Build parameters:"
+          echo "  THEOS_PACKAGE_SCHEME=rootless"
+          echo "  TARGET=iphone:clang:latest:16.5"
+          echo "  FINALPACKAGE=1"
+          echo "SDK detection: Letting theos auto-detect via xcrun"
 
       - name: Build package
         run: |
           set -euo pipefail
-          export THEOS="${THEOS:-$HOME/theos}"
-          
-          # Try building with theos auto-detection first
-          if ! make clean; then
-            echo "Clean failed, continuing..."
-          fi
-          
-          if ! make "${MAKE_TARGET}" THEOS_PACKAGE_SCHEME="${THEOS_PACKAGE_SCHEME}" TARGET="${TARGET}" FINALPACKAGE=1; then
-            echo "Build failed with auto-detection, trying with fallback SDK..."
-            
-            # Set up fallback SDK at runtime only
-            SDK_DIR="$HOME/theos/sdks"
-            FALLBACK_SDK="$SDK_DIR/iPhoneOS16.5.sdk"
-            if [ ! -d "$FALLBACK_SDK" ]; then
-              echo "Preferred fallback SDK iPhoneOS16.5.sdk not found; selecting first available SDK"
-              FALLBACK_SDK="$(python3 - "$SDK_DIR" <<'EOF'
-              import glob
-              import os
-              import sys
-              sdk_dir = sys.argv[1]
-              candidates = sorted(glob.glob(os.path.join(sdk_dir, "iPhoneOS*.sdk")))
-              print(candidates[-1] if candidates else "")
-              EOF
-              )"
-            fi
-            
-            if [ -z "$FALLBACK_SDK" ] || [ ! -d "$FALLBACK_SDK" ]; then
-              echo "No iPhoneOS SDKs available in $SDK_DIR"
-              exit 1
-            fi
-            
-            echo "Using fallback SDK at $FALLBACK_SDK"
-            export SDKROOT="$FALLBACK_SDK"
-            
-            # Retry build with fallback SDK
-            make "${MAKE_TARGET}" THEOS_PACKAGE_SCHEME="${THEOS_PACKAGE_SCHEME}" TARGET="${TARGET}" FINALPACKAGE=1
-          fi
+          export THEOS="$HOME/theos"
+          make clean && make package THEOS_PACKAGE_SCHEME=rootless TARGET=iphone:clang:latest:16.5 FINALPACKAGE=1
 
       - name: Capture package metadata
         id: package-meta
@@ -186,7 +151,7 @@ jobs:
           set -euo pipefail
           VERSION=$(awk '/^Version:/ {print $2}' control)
           PACKAGE=$(awk '/^Package:/ {print $2}' control)
-          ARTIFACT_NAME="${PACKAGE}-${VERSION}-${THEOS_PACKAGE_SCHEME}"
+          ARTIFACT_NAME="${PACKAGE}-${VERSION}-rootless"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "package=$PACKAGE" >> "$GITHUB_OUTPUT"
           echo "artifact_name=$ARTIFACT_NAME" >> "$GITHUB_OUTPUT"
