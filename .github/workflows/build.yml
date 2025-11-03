@@ -53,7 +53,6 @@ jobs:
           echo "Actor: ${{ github.actor }}"
           echo "Runner OS: ${{ runner.os }}"
           echo "Runner arch: ${{ runner.arch }}"
-          
       - name: Environment details
         run: |
           echo "=== Environment Details ==="
@@ -62,7 +61,7 @@ jobs:
           echo "GitHub Repository: $GITHUB_REPOSITORY"
           echo "GitHub Event Name: $GITHUB_EVENT_NAME"
           uname -a
-          
+
   build:
     name: Build package
     runs-on: macos-14
@@ -80,11 +79,10 @@ jobs:
       - name: Select Xcode and display SDK info
         run: |
           set -euo pipefail
-          
-          # Dynamic Xcode selection: prefer /Applications/Xcode.app, fallback to highest version
+
           if [ -d "/Applications/Xcode.app" ]; then
             XCODE_PATH="/Applications/Xcode.app"
-            echo "Using default Xcode at /Applications/Xcode.app"
+            echo "Using default Xcode at $XCODE_PATH"
           else
             echo "Default Xcode not found, selecting highest version..."
             XCODE_PATH=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -n 1)
@@ -94,10 +92,9 @@ jobs:
             fi
             echo "Using Xcode at $XCODE_PATH"
           fi
-          
+
           sudo xcode-select -s "$XCODE_PATH"
-          
-          # Display SDK information for diagnostics
+
           echo "=== Xcode and SDK Information ==="
           xcodebuild -version
           echo ""
@@ -124,26 +121,90 @@ jobs:
         run: |
           set -euo pipefail
           THEOS_PATH="$HOME/theos"
-          git clone --recursive https://github.com/theos/theos.git "$THEOS_PATH"
-          echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
-          echo "$HOME/theos/bin" >> "$GITHUB_PATH"
+          if [ -d "$THEOS_PATH/.git" ]; then
+            echo "Updating existing Theos checkout at $THEOS_PATH"
+            git -C "$THEOS_PATH" pull --ff-only
+            git -C "$THEOS_PATH" submodule update --init --recursive
+          else
+            git clone --recursive https://github.com/theos/theos.git "$THEOS_PATH"
+          fi
+          echo "THEOS=$THEOS_PATH" >> "$GITHUB_ENV"
+          echo "$THEOS_PATH/bin" >> "$GITHUB_PATH"
+
+      - name: Configure SDK
+        run: |
+          set -euo pipefail
+          THEOS_PATH="$HOME/theos"
+          SDKS_DIR="$THEOS_PATH/sdks"
+          SDKROOT=""
+          USE_FALLBACK=0
+
+          if XCODE_SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path 2>/dev/null); then
+            if [ -d "$XCODE_SDK_PATH" ]; then
+              SDKROOT="$XCODE_SDK_PATH"
+              echo "Using Xcode iPhoneOS SDK: $SDKROOT"
+            else
+              echo "xcrun reported $XCODE_SDK_PATH but the directory does not exist. Falling back to theos/sdks."
+              USE_FALLBACK=1
+            fi
+          else
+            echo "Unable to locate iPhoneOS SDK via xcrun. Falling back to theos/sdks."
+            USE_FALLBACK=1
+          fi
+
+          if [ "$USE_FALLBACK" -eq 1 ]; then
+            if [ -d "$SDKS_DIR/.git" ]; then
+              echo "Updating theos/sdks repository at $SDKS_DIR"
+              if ! git -C "$SDKS_DIR" pull --ff-only; then
+                echo "Warning: theos/sdks update failed, continuing with existing checkout"
+              fi
+            else
+              echo "Cloning theos/sdks repository into $SDKS_DIR"
+              rm -rf "$SDKS_DIR"
+              git clone https://github.com/theos/sdks.git "$SDKS_DIR"
+            fi
+            FALLBACK_SDK=$(find "$SDKS_DIR" -maxdepth 1 -type d -name 'iPhoneOS*.sdk' | sort -V | tail -n 1)
+            if [ -n "$FALLBACK_SDK" ]; then
+              SDKROOT="$FALLBACK_SDK"
+              echo "Using fallback iPhoneOS SDK: $SDKROOT"
+            else
+              echo "Warning: No fallback iPhoneOS SDK found under $SDKS_DIR"
+            fi
+          fi
+
+          if [ -n "$SDKROOT" ]; then
+            echo "SDKROOT=$SDKROOT" >> "$GITHUB_ENV"
+          fi
+          echo "THEOS_PLATFORM_SDK_ROOT=" >> "$GITHUB_ENV"
+
+      - name: Resolve build parameters
+        run: |
+          set -euo pipefail
+          PACKAGE_SCHEME="${{ github.event.inputs.package_scheme || 'rootless' }}"
+          THEOS_TARGET="${{ github.event.inputs.theos_target || 'iphone:clang:latest:16.5' }}"
+          MAKE_TARGET="${{ github.event.inputs.make_target || 'package' }}"
+          echo "PACKAGE_SCHEME=$PACKAGE_SCHEME" >> "$GITHUB_ENV"
+          echo "THEOS_TARGET=$THEOS_TARGET" >> "$GITHUB_ENV"
+          echo "MAKE_TARGET=$MAKE_TARGET" >> "$GITHUB_ENV"
 
       - name: Display build environment
         run: |
           set -euo pipefail
           echo "=== Build Environment ==="
-          echo "THEOS: $HOME/theos"
+          echo "THEOS: ${THEOS:-<not set>}"
+          echo "SDKROOT: ${SDKROOT:-<not set>}"
+          echo "THEOS_PLATFORM_SDK_ROOT: ${THEOS_PLATFORM_SDK_ROOT:-<not set>}"
           echo "Build parameters:"
-          echo "  THEOS_PACKAGE_SCHEME=rootless"
-          echo "  TARGET=iphone:clang:latest:16.5"
+          echo "  THEOS_PACKAGE_SCHEME=${PACKAGE_SCHEME:-rootless}"
+          echo "  TARGET=${THEOS_TARGET:-iphone:clang:latest:16.5}"
+          echo "  MAKE_TARGET=${MAKE_TARGET:-package}"
           echo "  FINALPACKAGE=1"
-          echo "SDK detection: Letting theos auto-detect via xcrun"
 
       - name: Build package
         run: |
           set -euo pipefail
-          export THEOS="$HOME/theos"
-          make clean && make package THEOS_PACKAGE_SCHEME=rootless TARGET=iphone:clang:latest:16.5 FINALPACKAGE=1
+          make clean
+          make "$MAKE_TARGET" THEOS_PACKAGE_SCHEME="$PACKAGE_SCHEME" TARGET="$THEOS_TARGET" FINALPACKAGE=1
 
       - name: Capture package metadata
         id: package-meta
@@ -151,7 +212,7 @@ jobs:
           set -euo pipefail
           VERSION=$(awk '/^Version:/ {print $2}' control)
           PACKAGE=$(awk '/^Package:/ {print $2}' control)
-          ARTIFACT_NAME="${PACKAGE}-${VERSION}-rootless"
+          ARTIFACT_NAME="${PACKAGE}-${VERSION}-${PACKAGE_SCHEME:-rootless}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "package=$PACKAGE" >> "$GITHUB_OUTPUT"
           echo "artifact_name=$ARTIFACT_NAME" >> "$GITHUB_OUTPUT"

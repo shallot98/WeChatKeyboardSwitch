@@ -1,8 +1,11 @@
+SHELL := /bin/bash
+.SHELLFLAGS := -eu -o pipefail -c
+
 THEOS ?= $(HOME)/theos
 THEOS_MAKE_PATH ?= $(THEOS)/makefiles
 
 ARCHS = arm64 arm64e
-TARGET = iphone:clang:latest:13.0
+TARGET = iphone:clang:latest:16.5
 
 include $(THEOS_MAKE_PATH)/common.mk
 
