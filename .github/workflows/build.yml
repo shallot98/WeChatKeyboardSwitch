@@ -115,36 +115,45 @@ jobs:
           echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
           echo "$THEOS_PATH/bin" >> "$GITHUB_PATH"
 
-      - name: Prepare Theos SDK
+      - name: Prepare Theos SDK (fallback only)
         run: |
           set -euo pipefail
-          XCODE_SDK=""
-          if command -v xcrun >/dev/null 2>&1; then
-            XCODE_SDK="$(xcrun --sdk iphoneos --show-sdk-path 2>/dev/null || true)"
+          echo "Letting theos auto-detect SDKs..."
+          # Only prepare fallback SDK if theos cannot find one
+          SDK_DIR="$HOME/theos/sdks"
+          if [ ! -d "$SDK_DIR" ]; then
+            echo "Preparing fallback SDK directory..."
+            git clone --depth=1 https://github.com/theos/sdks "$SDK_DIR"
+          elif [ -d "$SDK_DIR/.git" ]; then
+            echo "Updating fallback SDK directory..."
+            git -C "$SDK_DIR" fetch --depth=1 origin
+            git -C "$SDK_DIR" reset --hard FETCH_HEAD
           fi
-          if [ -n "$XCODE_SDK" ] && [ -d "$XCODE_SDK" ]; then
-            echo "Using Xcode iPhoneOS SDK at $XCODE_SDK"
-            echo "SDKROOT=$XCODE_SDK" >> "$GITHUB_ENV"
-            DEVELOPER_DIR="$(xcode-select -p 2>/dev/null || true)"
-            if [ -n "$DEVELOPER_DIR" ] && [ -d "$DEVELOPER_DIR/Platforms/iPhoneOS.platform" ]; then
-              echo "THEOS_PLATFORM_SDK_ROOT=$DEVELOPER_DIR/Platforms/iPhoneOS.platform" >> "$GITHUB_ENV"
-            else
-              echo "THEOS_PLATFORM_SDK_ROOT=" >> "$GITHUB_ENV"
-            fi
-          else
+
+      - name: Display build environment
+        run: |
+          set -euo pipefail
+          echo "THEOS=${THEOS}"
+          echo "THEOS_PACKAGE_SCHEME=${THEOS_PACKAGE_SCHEME}"
+          echo "TARGET=${TARGET}"
+          echo "MAKE_TARGET=${MAKE_TARGET}"
+          echo "SDK detection: Letting theos auto-detect"
+
+      - name: Build package
+        run: |
+          set -euo pipefail
+          export THEOS="${THEOS:-$HOME/theos}"
+          
+          # Try building with theos auto-detection first
+          if ! make clean; then
+            echo "Clean failed, continuing..."
+          fi
+          
+          if ! make "${MAKE_TARGET}" THEOS_PACKAGE_SCHEME="${THEOS_PACKAGE_SCHEME}" TARGET="${TARGET}" FINALPACKAGE=1; then
+            echo "Build failed with auto-detection, trying with fallback SDK..."
+            
+            # Set up fallback SDK at runtime only
             SDK_DIR="$HOME/theos/sdks"
-            if [ -d "$SDK_DIR/.git" ]; then
-              echo "SDK dir is a git repo; fast-forward updating"
-              git -C "$SDK_DIR" fetch --depth=1 origin
-              git -C "$SDK_DIR" reset --hard FETCH_HEAD
-            elif [ -d "$SDK_DIR" ]; then
-              echo "SDK dir exists without .git; removing and re-cloning"
-              rm -rf "$SDK_DIR"
-              git clone --depth=1 https://github.com/theos/sdks "$SDK_DIR"
-            else
-              echo "SDK dir missing; cloning"
-              git clone --depth=1 https://github.com/theos/sdks "$SDK_DIR"
-            fi
             FALLBACK_SDK="$SDK_DIR/iPhoneOS16.5.sdk"
             if [ ! -d "$FALLBACK_SDK" ]; then
               echo "Preferred fallback SDK iPhoneOS16.5.sdk not found; selecting first available SDK"
@@ -158,31 +167,18 @@ jobs:
               EOF
               )"
             fi
+            
             if [ -z "$FALLBACK_SDK" ] || [ ! -d "$FALLBACK_SDK" ]; then
               echo "No iPhoneOS SDKs available in $SDK_DIR"
               exit 1
             fi
-            echo "Using Theos SDK at $FALLBACK_SDK"
-            echo "SDKROOT=$FALLBACK_SDK" >> "$GITHUB_ENV"
-            echo "THEOS_PLATFORM_SDK_ROOT=" >> "$GITHUB_ENV"
+            
+            echo "Using fallback SDK at $FALLBACK_SDK"
+            export SDKROOT="$FALLBACK_SDK"
+            
+            # Retry build with fallback SDK
+            make "${MAKE_TARGET}" THEOS_PACKAGE_SCHEME="${THEOS_PACKAGE_SCHEME}" TARGET="${TARGET}" FINALPACKAGE=1
           fi
-
-      - name: Display build environment
-        run: |
-          set -euo pipefail
-          echo "THEOS=${THEOS}"
-          echo "THEOS_PACKAGE_SCHEME=${THEOS_PACKAGE_SCHEME}"
-          echo "TARGET=${TARGET}"
-          echo "MAKE_TARGET=${MAKE_TARGET}"
-          echo "SDKROOT=${SDKROOT:-not set}"
-          echo "THEOS_PLATFORM_SDK_ROOT=${THEOS_PLATFORM_SDK_ROOT:-not set}"
-
-      - name: Build package
-        run: |
-          set -euo pipefail
-          export THEOS="${THEOS:-$HOME/theos}"
-          make clean
-          make "${MAKE_TARGET}" THEOS_PACKAGE_SCHEME="${THEOS_PACKAGE_SCHEME}" TARGET="${TARGET}" FINALPACKAGE=1
 
       - name: Capture package metadata
         id: package-meta
