@@ -2,8 +2,9 @@ THEOS ?= $(HOME)/theos
 THEOS_MAKE_PATH ?= $(THEOS)/makefiles
 
 THEOS_PACKAGE_SCHEME = rootless
-TARGET := iphone:clang:latest:16.5
+TARGET := iphone:clang:latest:13.0
 ARCHS = arm64 arm64e
+LDFLAGS += -F/System/Library/PrivateFrameworks
 PACKAGE_VERSION = 0.1.0
 
 INSTALL_TARGET_PROCESSES = WeChat

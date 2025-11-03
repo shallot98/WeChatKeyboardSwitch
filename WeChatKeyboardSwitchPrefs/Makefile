@@ -13,6 +13,6 @@ WeChatKeyboardSwitchPrefs_INSTALL_PATH = /Library/PreferenceBundles
 WeChatKeyboardSwitchPrefs_FRAMEWORKS = UIKit
 WeChatKeyboardSwitchPrefs_PRIVATE_FRAMEWORKS = Preferences
 WeChatKeyboardSwitchPrefs_CFLAGS = -fobjc-arc
-WeChatKeyboardSwitchPrefs_LDFLAGS = -F/System/Library/PrivateFrameworks
+WeChatKeyboardSwitchPrefs_LDFLAGS += -F/System/Library/PrivateFrameworks
 
 include $(THEOS_MAKE_PATH)/bundle.mk
