@@ -1,0 +1,12 @@
+# Keyword and regex patterns used during wxkb_plugin analysis
+OBJC_CLASS_\$_
+T@"WB
+InputMode
+Language
+Switch
+setInputMode:
+setSelectedLanguage
+handleInputModeListFromView:withEvent:
+keyboardView:willSwitchPanelView:toPanelView:isPush:
+setUsingChineseForLanguageType:
+performSwitchWithOn:animated:shouldSendEvent:
